@@ -16,7 +16,7 @@ fn pnpm_exec(cmd: &str) {
         .arg(cmd)
         .current_dir("frontend")
         .output()
-        .expect(&format!("pnpm {cmd} failed"));
+        .unwrap_or_else(|_| panic!("pnpm {cmd} failed"));
 
     println!("status: {}", out.status);
     io::stderr().write_all(&out.stdout).unwrap();

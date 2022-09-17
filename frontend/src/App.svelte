@@ -2,36 +2,41 @@
     import { z } from "zod";
 
     const dateZ = z.preprocess(arg => {
-        if (typeof arg == "string" || arg instanceof Date) return new Date(arg);
-    }, z.date());
-    const Form = z.discriminatedUnion("now", [
-        z.object({
-            now: z.literal(true),
-            name: z.string().min(1),
-            time: dateZ.nullable(),
-        }),
-        z.object({
+            if (typeof arg == "string" || arg instanceof Date)
+                return new Date(arg);
+        }, z.date()),
+        Task = z.object({
             now: z.literal(false),
             name: z.string().min(1),
             time: dateZ,
+            file: z.any(),
         }),
-    ]);
+        Form = z.discriminatedUnion("now", [
+            z.object({
+                now: z.literal(true),
+                name: z.string().min(1),
+                time: dateZ.nullable(),
+                file: z.any(),
+            }),
+            Task,
+        ]);
 
-    let form: z.infer<typeof Form> = {
+    let form = {
         name: "",
         now: true,
         time: null,
+        files: null as FileList | null,
     };
     const submit = () => {
         const res = Form.safeParse(form);
-        res.success || alert("invalid");
+        if (!res.success) return void alert("invalid");
         alert(JSON.stringify(form));
     };
 
     const fetchData = () =>
         fetch("/api/tasks")
             .then(r => r.json())
-            .then(d => d.map(Form.parse));
+            .then(d => (d as {}[]).map(x => Task.parse(x)));
     const data = fetchData();
     data.then(console.debug).catch(console.error);
 </script>
@@ -41,6 +46,7 @@
         <h1>Új csengetés</h1>
         <form on:submit|preventDefault={submit}>
             <input type="text" bind:value={form.name} placeholder="Név" />
+            <input type="file" name="file" id="file" bind:files={form.files} />
             <label>
                 Lejátszás most
                 <input type="checkbox" name="now" bind:checked={form.now} />
@@ -58,16 +64,18 @@
     </div>
     <div class="card">
         <h1>Következő csengetések</h1>
-        <!-- <p>
-            Visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to read the
-            documentation
-        </p> -->
         {#await data}
             <p>loading</p>
         {:then data}
-            {#each data as item}
-                <p>{JSON.stringify(item)}</p>
-            {/each}
+            <div class="grid">
+                {#each data as item}
+                    <div class="task">
+                        <!-- <p>{JSON.stringify(item)}</p> -->
+                        <p>{item.name}</p>
+                        <p>{item.time.toISOString()}</p>
+                    </div>
+                {/each}
+            </div>
         {:catch}
             <p>fetch failed</p>
         {/await}
@@ -105,7 +113,6 @@
         backdrop-filter: saturate(180%) blur(10px);
         background-color: rgba(255, 255, 255, 0.4);
 
-        /* border: 1px solid red; */
         border-radius: 8px;
 
         padding: 10px;
@@ -126,17 +133,13 @@
         border-radius: 8px;
         padding: 0.3rem;
         margin: 5px;
+    }
+    input[type="text"] {
         background: #121212;
         color: #eee;
     }
 
     .btn {
-        /* background-image: linear-gradient(
-            to right,
-            #1a2980 0%,
-            #26d0ce 51%,
-            #1a2980 100%
-        ); */
         background-image: linear-gradient(
             to right,
             #00d2ff 0%,
@@ -150,11 +153,17 @@
         background-size: 200% auto;
         color: white;
     }
-
     .btn:hover {
         background-position: right center; /* change the direction of the change here */
         color: #fff;
         text-decoration: none;
         box-shadow: 0 0 20px #eee;
+    }
+
+    .grid {
+        display: grid;
+    }
+    .task {
+        place-self: stretch;
     }
 </style>
