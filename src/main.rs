@@ -34,12 +34,19 @@ async fn main() {
     let sink = Arc::new(Sink::try_new(&stream_handle).unwrap());
     let sink_ref1 = sink.clone();
 
-    let tasks = warp::path("tasks").and(warp::path::end()).and(
-        warp::get().map(list_tasks).or(warp::post()
-            .and(warp::body::json())
-            .map(move |x| (x, sink.clone()))
-            .then(post_task)),
-    );
+    let tasks = warp::path("tasks")
+        .and(warp::path::end())
+        .and(warp::get())
+        .map(list_tasks);
+    let files = warp::path("files")
+        .and(warp::path::end())
+        .and(warp::get())
+        .map(list_files);
+    let post = warp::path::end()
+        .and(warp::post())
+        .and(warp::body::json())
+        .map(move |x| (x, sink.clone()))
+        .then(post_task);
     let playtest = warp::path("playtest")
         .and(warp::path::end())
         .and(warp::post())
@@ -47,7 +54,7 @@ async fn main() {
             playtest(&sink_ref1);
             "done"
         });
-    let api = warp::path("api").and(tasks.or(playtest));
+    let api = warp::path("api").and(tasks.or(files).or(post).or(playtest));
 
     let frontend = warp::get().and(warp_embed::embed(&Frontend));
 
@@ -57,39 +64,125 @@ async fn main() {
 }
 
 #[derive(Debug, Deserialize)]
-struct PostTask {
-    name: String,
-    now: bool,
-    time: Option<DateTime<Utc>>,
+struct Post {
     file: Option<Bytes>,
-    file_name: String,
+    task: Task,
 }
-async fn post_task((task, sink): (PostTask, Arc<Sink>)) -> Box<dyn warp::Reply> {
-    if !task.now {
-        todo!("implement scheduler");
-        #[allow(unreachable_code)]
-        if let Some(file) = task.file.clone() {
-            let mut file = base64::decode(file).expect("invalid base64").into();
-            match save_file(&task.file_name, &mut file).await {
-                Ok(_) => (),
-                Err(_) => {
-                    error!("failed to save file: {}", task.file_name);
-                    return Box::new(warp::reply::with_status(
-                        "failed to save file",
-                        StatusCode::INSUFFICIENT_STORAGE,
-                    ));
-                }
-            };
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum Task {
+    Now {
+        name: String,
+        file_name: String,
+    },
+    Scheduled {
+        name: String,
+        file_name: String,
+        time: DateTime<Utc>,
+    },
+    Recurring {
+        name: String,
+        file_name: String,
+        time: Vec<DateTime<Utc>>,
+    },
+}
+impl Task {
+    pub fn is_now(&self) -> bool {
+        match self {
+            Task::Now {
+                name: _,
+                file_name: _,
+            } => true,
+            Task::Scheduled {
+                name: _,
+                file_name: _,
+                time: _,
+            } => false,
+            Task::Recurring {
+                name: _,
+                file_name: _,
+                time: _,
+            } => false,
         }
     }
+    pub fn get_name(&self) -> &String {
+        match self {
+            Task::Now { name, file_name: _ } => name,
+            Task::Scheduled {
+                name,
+                file_name: _,
+                time: _,
+            } => name,
+            Task::Recurring {
+                name,
+                file_name: _,
+                time: _,
+            } => name,
+        }
+    }
+    pub fn get_file_name(&self) -> &String {
+        match self {
+            Task::Now { name: _, file_name } => file_name,
+            Task::Scheduled {
+                name: _,
+                file_name,
+                time: _,
+            } => file_name,
+            Task::Recurring {
+                name: _,
+                file_name,
+                time: _,
+            } => file_name,
+        }
+    }
+}
 
-    if let Some(file) = task.file {
+fn list_tasks() -> impl warp::Reply {
+    let tasks: Vec<Task> = vec![
+        Task::Now {
+            name: "becsengo".into(),
+            file_name: "becsengo.mp3".into(),
+        },
+        Task::Scheduled {
+            name: "kicsengo".into(),
+            time: Utc::now(),
+            file_name: "kicsengo.mp3".into(),
+        },
+    ];
+    json(&tasks)
+}
+fn list_files() -> impl warp::Reply {
+    let files = vec!["becsengo.mp3", "kicsengo.mp3"];
+    json(&files)
+}
+
+async fn post_task((req, sink): (Post, Arc<Sink>)) -> Box<dyn warp::Reply> {
+    if !req.task.is_now() {
+        todo!("implement scheduler");
+        // #[allow(unreachable_code)]
+        // if let Some(file) = task.file.clone() {
+        //     let mut file = base64::decode(file).expect("invalid base64").into();
+        //     match save_file(&task.file_name, &mut file).await {
+        //         Ok(_) => (),
+        //         Err(_) => {
+        //             error!("failed to save file: {}", task.file_name);
+        //             return Box::new(warp::reply::with_status(
+        //                 "failed to save file",
+        //                 StatusCode::INSUFFICIENT_STORAGE,
+        //             ));
+        //         }
+        //     };
+        // }
+    }
+
+    if let Some(file) = req.file {
         let file = base64::decode(file).expect("invalid base64").into();
 
         match play_buf(file, sink.as_ref()) {
             Ok(_) => (),
             Err(_) => {
-                error!("playing failed: {}", task.name);
+                error!("playing failed: {}", req.task.get_name());
                 return Box::new(warp::reply::with_status(
                     "failed to play file",
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -113,31 +206,6 @@ async fn play_file(fname: &str, sink: &Sink) -> anyhow::Result<()> {
     let file = File::open(fname).await?.into_std().await;
     let src = Decoder::new(BufReader::new(file))?;
     Ok(sink.append(src))
-}
-
-#[derive(Debug, Serialize)]
-struct Task {
-    name: String,
-    now: bool,
-    time: Option<DateTime<Utc>>,
-    file: Bytes,
-}
-fn list_tasks() -> impl warp::Reply {
-    let tasks: Vec<Task> = vec![
-        Task {
-            name: "becsengo".into(),
-            now: false,
-            time: Some(Utc::now()),
-            file: "".into(),
-        },
-        Task {
-            name: "kicsengo".into(),
-            now: false,
-            time: Some(Utc::now()),
-            file: "".into(),
-        },
-    ];
-    json(&tasks)
 }
 
 fn playtest(sink: &Sink) {

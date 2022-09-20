@@ -4,67 +4,156 @@
     const dateZ = z.preprocess(arg => {
             if (typeof arg == "string" || arg instanceof Date)
                 return new Date(arg);
+            return null;
         }, z.date()),
-        Task = z.object({
-            now: z.literal(false),
+        Form = z.object({
             name: z.string().min(1),
-            time: dateZ,
-            file: z.any(),
-        }),
-        Form = z.discriminatedUnion("now", [
-            z.object({
-                now: z.literal(true),
-                name: z.string().min(1),
-                time: dateZ.nullable(),
-                file: z.any(),
-            }),
-            Task,
-        ]);
+            file_name: z
+                .string()
+                .min(1)
+                .refine(str => {
+                    if (str === "$NEW" && !form.files?.length) return false;
+                    return true;
+                }, "new file missing"),
+            time: dateZ
+                .nullable()
+                .or(dateZ.array().nonempty())
+                .refine(d => {
+                    if (d || schedule === "now") return true;
+                }, "L"),
+        });
+
+    type _ = z.infer<typeof Form>;
 
     let form = {
         name: "",
-        now: true,
-        time: null,
+        file_name: "",
+        time: null as Date | null,
+        times: [null] as Array<Date | null>,
         files: null as FileList | null,
     };
-    const submit = () => {
-        const res = Form.safeParse(form);
-        if (!res.success) return void alert("invalid");
-        alert(JSON.stringify(form));
-    };
+    const submit = async () => {
+        const time = schedule === "recurring" ? form.times : form.time;
+        const parse = Form.safeParse({ ...form, time });
+        if (!parse.success) return void alert(JSON.stringify(parse.error));
 
-    const fetchData = () =>
-        fetch("/api/tasks")
-            .then(r => r.json())
-            .then(d => (d as {}[]).map(x => Task.parse(x)));
-    const data = fetchData();
-    data.then(console.debug).catch(console.error);
+        const f = await form.files?.[0]
+            ?.arrayBuffer()
+            .then(arrayBufferToBase64);
+        f && console.debug(`file size: ${f.length}`);
+
+        const body = { task: { ...parse.data, type: "Now" }, file: f };
+        console.debug(body);
+
+        fetch("/api", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+            },
+            body: JSON.stringify(body),
+        });
+    };
+    function arrayBufferToBase64(buffer: ArrayBuffer) {
+        var binary = "";
+        var bytes = new Uint8Array(buffer);
+        var len = bytes.byteLength;
+        for (var i = 0; i < len; i++) {
+            binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+    }
+
+    const fetchData = (): [
+        Promise<{ name: string; file_name: string; time: string | null }[]>,
+        Promise<string[]>
+    ] => [
+        fetch("/api/tasks").then(r => r.json()),
+        fetch("/api/files").then(r => r.json()),
+    ];
+
+    const [tasks, files] = fetchData();
+    tasks.then(console.debug).catch(console.error);
+
+    let schedule: "now" | "scheduled" | "recurring";
 </script>
 
 <main>
-    <div class="card">
+    <section class="card">
         <h1>Új csengetés</h1>
         <form on:submit|preventDefault={submit}>
             <input type="text" bind:value={form.name} placeholder="Név" />
-            <input type="file" name="file" id="file" bind:files={form.files} />
+
             <label>
-                Lejátszás most
-                <input type="checkbox" name="now" bind:checked={form.now} />
+                File:
+                <select
+                    name="file_name"
+                    id="file_name"
+                    bind:value={form.file_name}>
+                    {#await files}
+                        <option disabled>Loading...</option>
+                    {:then data}
+                        <option value="$NEW">Új file</option>
+                        {#each data as item}
+                            <option value={item}>{item}</option>
+                        {/each}
+                    {/await}
+                </select>
+
+                {#if form.file_name === "$NEW"}
+                    <div>
+                        <input
+                            type="file"
+                            name="file_blob"
+                            id="file_blob"
+                            bind:files={form.files} />
+                        <!-- <input
+                            type="text"
+                            name="file_url"
+                            id="file_url"
+                            placeholder="File URL" /> -->
+                    </div>
+                {/if}
             </label>
-            {#if !form.now}
-                <input
-                    type="datetime-local"
-                    name="time"
-                    bind:value={form.time}
-                />
-            {/if}
+
+            <label>
+                Mikor?
+                <select name="time" id="time" bind:value={schedule}>
+                    <option value="now">Most</option>
+                    <option value="scheduled">Időzítve, egyszer</option>
+                    <option value="recurring">Időzítve, ismétlődően</option>
+                </select>
+
+                <div>
+                    {#if schedule === "scheduled"}
+                        <!--  -->
+                        <input
+                            type="datetime-local"
+                            name="time"
+                            bind:value={form.time} />
+                    {:else if schedule === "recurring"}
+                        <div
+                            class="add-btn"
+                            on:click={() =>
+                                (form.times = [...form.times, null])}>
+                            +
+                        </div>
+                        {#each form.times as _, i}
+                            <input
+                                type="datetime-local"
+                                name="time"
+                                bind:value={form.times[i]} />
+                        {/each}
+                    {/if}
+                </div>
+            </label>
+
             <input type="submit" value="Go" class="btn" />
         </form>
-        <p>{JSON.stringify(form)}</p>
-    </div>
-    <div class="card">
+        <p>{JSON.stringify({ ...form, schedule })}</p>
+    </section>
+    <section class="card">
         <h1>Következő csengetések</h1>
-        {#await data}
+        {#await tasks}
             <p>loading</p>
         {:then data}
             <div class="grid">
@@ -72,14 +161,14 @@
                     <div class="task">
                         <!-- <p>{JSON.stringify(item)}</p> -->
                         <p>{item.name}</p>
-                        <p>{item.time.toISOString()}</p>
+                        <p>{item.time && new Date(item.time).toISOString()}</p>
                     </div>
                 {/each}
             </div>
         {:catch}
             <p>fetch failed</p>
         {/await}
-    </div>
+    </section>
 </main>
 
 <style>
