@@ -13,9 +13,8 @@ use std::{
     io::{BufReader, Cursor},
     path::PathBuf,
     sync::Arc,
-    time::Duration,
 };
-use tokio::{fs::File, io::AsyncWriteExt};
+use tokio::{fs::File, io::AsyncWriteExt, time::Duration};
 use warp::{hyper::StatusCode, reply::json, Filter};
 
 #[derive(RustEmbed)]
@@ -23,16 +22,40 @@ use warp::{hyper::StatusCode, reply::json, Filter};
 struct Frontend;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "warp=info,csengo=info");
+        env::set_var("RUST_LOG", "warp=info,csengo=debug");
     }
     pretty_env_logger::init();
 
+    // audio setup
     let (_stream, stream_handle): (OutputStream, OutputStreamHandle) =
         OutputStream::try_default().unwrap();
     let sink = Arc::new(Sink::try_new(&stream_handle).unwrap());
     let sink_ref1 = sink.clone();
+
+    // db setup
+    // let conn = rusqlite::Connection::open("./csengo.db")?;
+    // conn.execute_batch(
+    //     "CREATE TABLE IF NOT EXISTS task_s (
+    //         name      TEXT PRIMARY KEY,
+    //         file_name TEXT NOT NULL,
+    //         time      TEXT
+    //     );
+    //     CREATE TABLE IF NOT EXISTS task_r (
+    //         name      TEXT PRIMARY KEY,
+    //         file_name TEXT NOT NULL,
+    //         time      TEXT
+    //     );
+    //     CREATE TABLE IF NOT EXISTS files (
+    //         name      TEXT PRIMARY KEY,
+    //         data      BLOB
+    //     );",
+    // )?;
+
+    let db = sqlx::sqlite::SqlitePoolOptions::new()
+        .connect("sqlite:csengo.db")
+        .await?;
 
     let tasks = warp::path("tasks")
         .and(warp::path::end())
@@ -61,6 +84,8 @@ async fn main() {
     warp::serve(frontend.or(api).with(warp::log("warp")))
         .run(([0, 0, 0, 0], 8080))
         .await;
+
+    unreachable!();
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +96,7 @@ struct Post {
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
+#[serde(rename_all = "camelCase")]
 enum Task {
     Now {
         name: String,
@@ -158,37 +184,81 @@ fn list_files() -> impl warp::Reply {
 }
 
 async fn post_task((req, sink): (Post, Arc<Sink>)) -> Box<dyn warp::Reply> {
-    if !req.task.is_now() {
-        todo!("implement scheduler");
-        // #[allow(unreachable_code)]
-        // if let Some(file) = task.file.clone() {
-        //     let mut file = base64::decode(file).expect("invalid base64").into();
-        //     match save_file(&task.file_name, &mut file).await {
-        //         Ok(_) => (),
-        //         Err(_) => {
-        //             error!("failed to save file: {}", task.file_name);
-        //             return Box::new(warp::reply::with_status(
-        //                 "failed to save file",
-        //                 StatusCode::INSUFFICIENT_STORAGE,
-        //             ));
-        //         }
-        //     };
-        // }
-    }
+    // a special case for one-off upload instant plays: don't save the file, just play it
+    if req.task.is_now() {
+        if let Some(file) = req.file {
+            let file = base64::decode(file).expect("invalid base64").into();
 
-    if let Some(file) = req.file {
-        let file = base64::decode(file).expect("invalid base64").into();
-
-        match play_buf(file, sink.as_ref()) {
-            Ok(_) => (),
-            Err(_) => {
-                error!("playing failed: {}", req.task.get_name());
+            info!(
+                "playing {}: {}",
+                req.task.get_name(),
+                req.task.get_file_name()
+            );
+            if let Err(e) = play_buf(file, sink.as_ref()) {
+                error!("playing failed: {}\n{e:#?}", req.task.get_name());
                 return Box::new(warp::reply::with_status(
                     "failed to play file",
                     StatusCode::INTERNAL_SERVER_ERROR,
                 ));
             }
+
+            // save_file(&req.task.get_file_name(), &mut file)
+            //     .await
+            //     .unwrap();
+            // play_file(&req.task.get_file_name(), sink.as_ref())
+            //     .await
+            //     .unwrap();
+
+            return Box::new("OK");
+        }
+    }
+
+    if let Some(file) = req.file {
+        let mut file = base64::decode(file).expect("invalid base64").into();
+        if let Err(e) = save_file(req.task.get_file_name(), &mut file).await {
+            error!("failed to save file: {}\n{e:#?}", req.task.get_file_name());
+            return Box::new(warp::reply::with_status(
+                "failed to save file",
+                StatusCode::INSUFFICIENT_STORAGE,
+            ));
         };
+    }
+
+    match req.task {
+        Task::Now {
+            name: _,
+            file_name: _,
+        } => unreachable!(),
+        Task::Scheduled {
+            name,
+            file_name,
+            time,
+        } => {
+            let diff = match (time - Utc::now()).to_std() {
+                Ok(d) => d,
+                Err(e) => {
+                    error!("{}: invalid time: {e:#?}", name);
+                    return Box::new(warp::reply::with_status(
+                        "time must be in the future",
+                        StatusCode::BAD_REQUEST,
+                    ));
+                }
+            };
+
+            tokio::task::spawn(async move {
+                debug!("{}: waiting {}s", name, diff.as_secs());
+                tokio::time::sleep(diff).await;
+                play_file(&file_name, sink.as_ref()).await.unwrap();
+            });
+        }
+        Task::Recurring {
+            name,
+            file_name,
+            time,
+        } => {
+            //
+            todo!()
+        }
     }
 
     Box::new("OK")
@@ -205,11 +275,13 @@ fn play_buf(buf: Bytes, sink: &Sink) -> anyhow::Result<()> {
 async fn play_file(fname: &str, sink: &Sink) -> anyhow::Result<()> {
     let file = File::open(fname).await?.into_std().await;
     let src = Decoder::new(BufReader::new(file))?;
-    Ok(sink.append(src))
+    debug!("playing: {fname}");
+    sink.append(src);
+    Ok(())
 }
 
 fn playtest(sink: &Sink) {
-    // Add a dummy source of the sake of the example.
+    // Add a dummy source for the sake of the example.
     let source = SineWave::new(440.0)
         .take_duration(Duration::from_secs_f32(1.0))
         .amplify(0.20);

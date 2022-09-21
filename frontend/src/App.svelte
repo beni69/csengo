@@ -1,11 +1,13 @@
 <script lang="ts">
     import { z } from "zod";
 
-    const dateZ = z.preprocess(arg => {
-            if (typeof arg == "string" || arg instanceof Date)
-                return new Date(arg);
-            return null;
-        }, z.date()),
+    const dateZ = z
+            .preprocess(arg => {
+                if (typeof arg == "string" || arg instanceof Date)
+                    return new Date(arg);
+                return null;
+            }, z.date())
+            .refine(d => d > new Date(), "date must be in the future"),
         Form = z.object({
             name: z.string().min(1),
             file_name: z
@@ -14,7 +16,8 @@
                 .refine(str => {
                     if (str === "$NEW" && !form.files?.length) return false;
                     return true;
-                }, "new file missing"),
+                }, "new file missing")
+                .transform(s => (s === "$NEW" ? form.files![0].name : s)),
             time: dateZ
                 .nullable()
                 .or(dateZ.array().nonempty())
@@ -22,8 +25,6 @@
                     if (d || schedule === "now") return true;
                 }, "L"),
         });
-
-    type _ = z.infer<typeof Form>;
 
     let form = {
         name: "",
@@ -42,8 +43,9 @@
             .then(arrayBufferToBase64);
         f && console.debug(`file size: ${f.length}`);
 
-        const body = { task: { ...parse.data, type: "Now" }, file: f };
+        const body = { task: { ...parse.data, type: schedule }, file: f };
         console.debug(body);
+        console.debug(parse.data.time, form.time);
 
         fetch("/api", {
             method: "POST",
@@ -175,7 +177,6 @@
     :global(:root) {
         width: 100vw;
         height: 100vh;
-        overflow: hidden;
 
         font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
         font-size: 16px;
