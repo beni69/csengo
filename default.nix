@@ -5,5 +5,6 @@ stdenv.mkDerivation {
   buildInputs = [
     pkg-config
     alsa-lib
+    sqlite
   ];
 }
