@@ -4,6 +4,12 @@ use std::{
 };
 
 fn main() {
+    // for some weird reason ci builds fail on this step on windows
+    #[cfg(windows)]
+    if std::env::var("CI").is_ok() {
+        return;
+    }
+
     println!("cargo:rerun-if-changed=frontend/src");
 
     pnpm_exec("install");

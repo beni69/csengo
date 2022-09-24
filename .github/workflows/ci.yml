@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: []
+    branches: ["main"]
   pull_request:
-    branches: []
+    branches: ["main"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -34,9 +34,12 @@ jobs:
           target: ${{ matrix.target }}
           components: clippy
       - run: corepack enable && corepack prepare pnpm@latest --activate
+      - name: frontend setup
+        shell: bash
+        run: cd frontend && pnpm install && pnpm build
       - name: install alsa headers
         run: sudo apt update && sudo apt install -y --no-install-recommends libasound2-dev
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
       - name: run clippy
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         uses: actions-rs/clippy-check@v1

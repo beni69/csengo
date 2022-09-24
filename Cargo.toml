@@ -23,3 +23,9 @@ warp-embed = "0.4.0"
 strip = true
 lto = true
 opt-level = "z"
+
+[package.metadata.cross.target.aarch64-unknown-linux-gnu]
+dockerfile = "./.github/cross.Dockerfile"
+
+[package.metadata.cross.target.armv7-unknown-linux-gnueabihf]
+dockerfile = "./.github/cross.Dockerfile"
