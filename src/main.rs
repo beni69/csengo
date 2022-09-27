@@ -378,6 +378,7 @@ fn schedule_recurring(
             .to_std()
             .expect("time went backwards"),
         };
+        debug!("{name} (recurring): waiting {diff:?} for first play");
         let start: Instant = Instant::now() + diff;
         let name = name.clone();
         let fname = file_name.clone();

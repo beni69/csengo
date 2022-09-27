@@ -20,7 +20,15 @@
                 .transform(s => (s === "$NEW" ? form.files![0].name : s)),
             time: dateZ
                 .nullable()
-                .or(dateZ.array().nonempty())
+                .or(
+                    dateZ
+                        .array()
+                        .nonempty()
+                        .transform(d =>
+                            d.map(dd => /T(.+)Z/.exec(dd.toISOString())?.at(-1))
+                        )
+                        .refine(t => t.map(tt => tt || null) || null)
+                )
                 .refine(d => {
                     if (d || schedule === "now") return true;
                 }, "L"),
@@ -47,13 +55,19 @@
         console.debug(body);
         console.debug(parse.data.time, form.time);
 
-        fetch("/api", {
+        let res = await fetch("/api", {
             method: "POST",
             headers: {
                 "content-type": "application/json",
             },
             body: JSON.stringify(body),
         });
+        if (res.ok) {
+            alert(await res.text());
+        } else {
+            alert("ERROR\n" + res.statusText);
+            console.error(await res.text());
+        }
     };
     function arrayBufferToBase64(buffer: ArrayBuffer) {
         var binary = "";
@@ -90,7 +104,8 @@
                 <select
                     name="file_name"
                     id="file_name"
-                    bind:value={form.file_name}>
+                    bind:value={form.file_name}
+                >
                     {#await files}
                         <option disabled>Loading...</option>
                     {:then data}
@@ -107,7 +122,8 @@
                             type="file"
                             name="file_blob"
                             id="file_blob"
-                            bind:files={form.files} />
+                            bind:files={form.files}
+                        />
                         <!-- <input
                             type="text"
                             name="file_url"
@@ -131,19 +147,22 @@
                         <input
                             type="datetime-local"
                             name="time"
-                            bind:value={form.time} />
+                            bind:value={form.time}
+                        />
                     {:else if schedule === "recurring"}
                         <div
                             class="add-btn"
                             on:click={() =>
-                                (form.times = [...form.times, null])}>
+                                (form.times = [...form.times, null])}
+                        >
                             +
                         </div>
                         {#each form.times as _, i}
                             <input
                                 type="datetime-local"
                                 name="time"
-                                bind:value={form.times[i]} />
+                                bind:value={form.times[i]}
+                            />
                         {/each}
                     {/if}
                 </div>
