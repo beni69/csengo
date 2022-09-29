@@ -91,7 +91,14 @@
         fetchData();
     };
 
-    let tasks: Promise<{ name: string; file_name: string; time: string }[]>,
+    let tasks: Promise<
+            {
+                name: string;
+                file_name: string;
+                time: any;
+                type: typeof schedule;
+            }[]
+        >,
         files: Promise<string[]>;
     const fetchData = () => {
         tasks = fetch("/api/tasks").then(r => r.json());
@@ -190,8 +197,11 @@
                             X
                         </button>
                         <p>{item.name}</p>
-                        <p>{new Date(item.time).toISOString()}</p>
-                        <!-- TODO: display proper date for recurring tasks -->
+                        {#if item.type === "recurring"}
+                            <p>{item.time.join(", ")}</p>
+                        {:else}
+                            <p>{new Date(item.time).toISOString()}</p>
+                        {/if}
                     </div>
                 {/each}
             </div>
