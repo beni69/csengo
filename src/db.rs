@@ -1,7 +1,7 @@
 use crate::{schedule_recurring, schedule_task, File, Task};
 use chrono::{NaiveTime, Utc};
 use rodio::Sink;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -73,7 +73,7 @@ pub(crate) async fn list_files(conn: Db) -> Result<Vec<String>> {
     res.collect()
 }
 pub(crate) fn get_file(conn: &Connection, name: &str) -> Result<File> {
-    conn.query_row("SELECT * FROM files WHERE name == ?", [name], |r| {
+    conn.query_row("SELECT * FROM files WHERE name == ?", (name,), |r| {
         Ok(File {
             name: r.get(0)?,
             data: r.get::<_, Vec<u8>>(1)?.into(),
@@ -115,7 +115,7 @@ pub(crate) async fn list_tasks(conn: Db) -> Result<Vec<Task>> {
                     .get::<_, String>(3)?
                     .split(';')
                     .map(|s| {
-                        s.parse().map_err(|e| {
+                        NaiveTime::parse_from_str(s, crate::TIMEFMT).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 3,
                                 rusqlite::types::Type::Text,
@@ -130,7 +130,16 @@ pub(crate) async fn list_tasks(conn: Db) -> Result<Vec<Task>> {
     })?;
     res.collect()
 }
-pub(crate) fn delete_task(conn: &Connection, name: &str) -> Result<()> {
-    conn.execute("DELETE FROM tasks WHERE name == ?", [name])
-        .map(|_| ())
+pub(crate) fn delete_task(conn: &Connection, name: &str) -> Result<bool> {
+    Ok(conn.execute("DELETE FROM tasks WHERE name == ?", (name,))? == 1)
+}
+pub(crate) fn exists_task(conn: &Connection, name: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT name FROM tasks WHERE name == ?",
+            (name,),
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
 }

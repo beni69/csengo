@@ -10,9 +10,16 @@ use rodio::{
 };
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
-use std::{env, io::Cursor, sync::Arc};
+use std::{
+    env::{self, var},
+    io::Cursor,
+    net::IpAddr,
+    sync::Arc,
+};
 use tokio::time::{interval_at, Duration, Instant, MissedTickBehavior};
 use warp::{hyper::StatusCode, reply::json, Filter};
+
+const GIT_REF: &str = include_str!("../.git/refs/heads/main");
 
 #[derive(RustEmbed)]
 #[folder = "frontend/dist"]
@@ -24,6 +31,8 @@ async fn main() -> anyhow::Result<()> {
         env::set_var("RUST_LOG", "warp=info,csengo=debug");
     }
     pretty_env_logger::init();
+
+    info!("csengo v{} - starting...", &GIT_REF[0..7]);
 
     // audio setup
     let (_stream, stream_handle): (OutputStream, OutputStreamHandle) = OutputStream::try_default()?;
@@ -54,11 +63,19 @@ async fn main() -> anyhow::Result<()> {
         .then(db::list_files)
         .map(wrap_db("files"));
 
+    let conn_ref = conn.clone();
     let post = warp::path::end()
         .and(warp::post())
         .and(warp::body::json())
-        .map(move |x| (x, conn.clone(), sink.clone()))
+        .map(move |x| (x, conn_ref.clone(), sink.clone()))
         .then(post_task);
+
+    let conn_ref = conn.clone();
+    let delete = warp::path!("task" / String)
+        .and(warp::path::end())
+        .and(warp::delete())
+        .map(move |s| (s, conn_ref.clone()))
+        .then(delete_task);
 
     let playtest = warp::path("playtest")
         .and(warp::path::end())
@@ -67,12 +84,19 @@ async fn main() -> anyhow::Result<()> {
             playtest(&sink_ref1);
             "done"
         });
-    let api = warp::path("api").and(tasks.or(files).or(post).or(playtest));
+    let api = warp::path("api").and(tasks.or(files).or(post).or(delete).or(playtest));
 
     let frontend = warp::get().and(warp_embed::embed(&Frontend));
 
-    warp::serve(frontend.or(api).with(warp::log("warp")))
-        .run(([0, 0, 0, 0], 8080))
+    warp::serve(frontend.or(api).with(warp::log("server")))
+        .run((
+            var("HOST")
+                .map(|s| s.parse::<IpAddr>().expect("invalid $HOST"))
+                .unwrap_or([0, 0, 0, 0].into()),
+            var("PORT")
+                .map(|s| s.parse().expect("invalid $PORT"))
+                .unwrap_or(8080u16),
+        ))
         .await;
 
     unreachable!();
@@ -252,7 +276,8 @@ async fn post_task((req, conn, sink): (Post, db::Db, Arc<Sink>)) -> Box<dyn warp
                 data: file,
             },
         ) {
-            // error!("failed to save file: {}\n{e:#?}", req.task.get_file_name()); return Box::new(warp::reply::with_status(     "failed to save file",     StatusCode::INSUFFICIENT_STORAGE, ));
+            error!("failed to save file: {}\n{e:#?}", req.task.get_file_name());
+            // return Box::new(warp::reply::with_status(     "failed to save file",     StatusCode::INSUFFICIENT_STORAGE, ));
             return Box::new(err_to_reply(
                 e,
                 req.task.get_file_name(),
@@ -281,7 +306,8 @@ async fn post_task((req, conn, sink): (Post, db::Db, Arc<Sink>)) -> Box<dyn warp
             match (*time - Utc::now()).to_std() {
                 Ok(_) => (),
                 Err(e) => {
-                    // error!("{}: invalid time: {e:#?}", name); return Box::new(warp::reply::with_status(     "time must be in the future",     StatusCode::BAD_REQUEST, ));
+                    error!("{}: invalid time: {e:#?}", name);
+                    // return Box::new(warp::reply::with_status(     "time must be in the future",     StatusCode::BAD_REQUEST, ));
                     return Box::new(err_to_reply(
                         e,
                         name,
@@ -292,7 +318,8 @@ async fn post_task((req, conn, sink): (Post, db::Db, Arc<Sink>)) -> Box<dyn warp
             };
 
             if let Err(e) = db::insert_task(&*conn.clone().lock().await, &req.task) {
-                // error!("{name}: db insert failed\n{e:#?}"); return Box::new(warp::reply::with_status(     "failed to save task",     StatusCode::INTERNAL_SERVER_ERROR, ));
+                error!("{name}: db insert failed\n{e:#?}");
+                // return Box::new(warp::reply::with_status(     "failed to save task",     StatusCode::INTERNAL_SERVER_ERROR, ));
                 return Box::new(err_to_reply(
                     e,
                     name,
@@ -311,14 +338,27 @@ async fn post_task((req, conn, sink): (Post, db::Db, Arc<Sink>)) -> Box<dyn warp
             };
         }
         Task::Recurring {
-            name,
-            file_name,
-            time,
+            ref name,
+            ref file_name,
+            ref time,
         } => {
-            if let Err(e) = schedule_recurring(name.clone(), file_name, time, conn, sink) {
+            if let Err(e) = db::insert_task(&*conn.clone().lock().await, &req.task) {
+                error!("{name}: db insert failed\n{e:#?}");
+                // return Box::new(warp::reply::with_status(     "failed to save task",     StatusCode::INTERNAL_SERVER_ERROR, ));
+                return Box::new(err_to_reply(
+                    e,
+                    name,
+                    "failed to save task",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ));
+            };
+
+            if let Err(e) =
+                schedule_recurring(name.clone(), file_name.clone(), time.clone(), conn, sink)
+            {
                 return Box::new(err_to_reply(
                     e.root_cause(),
-                    &name,
+                    name,
                     "",
                     StatusCode::INTERNAL_SERVER_ERROR,
                 ));
@@ -327,6 +367,30 @@ async fn post_task((req, conn, sink): (Post, db::Db, Arc<Sink>)) -> Box<dyn warp
     }
 
     Box::new("OK")
+}
+
+async fn delete_task((name, conn): (String, db::Db)) -> Box<dyn warp::Reply> {
+    match db::delete_task(&*conn.lock().await, &name) {
+        Ok(v) => {
+            if v {
+                Box::new("OK")
+            } else {
+                Box::new(warp::reply::with_status(
+                    "task not found",
+                    StatusCode::NOT_FOUND,
+                ))
+            }
+        }
+        Err(e) => {
+            error!("{name}: failed to delete task");
+            Box::new(err_to_reply(
+                e,
+                &name,
+                "msg",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    }
 }
 
 fn err_to_reply(
@@ -350,6 +414,19 @@ fn schedule_task(
     tokio::task::spawn(async move {
         debug!("{}: waiting {}s", name, diff.as_secs());
         tokio::time::sleep(diff).await;
+        {
+            match db::exists_task(&*conn.lock().await, &name) {
+                Ok(b) => {
+                    if !b {
+                        warn!("{name}: would've played, but the task was since deleted");
+                        return;
+                    }
+                }
+                Err(e) => {
+                    error!("{name}: failed to check task\n{e:#?}");
+                }
+            }
+        }
         if let Err(e) = play_file(&file_name, &conn, &sink).await {
             error!("error while playing {}:\n{e:#?}", &file_name);
         }

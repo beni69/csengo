@@ -62,12 +62,12 @@
             },
             body: JSON.stringify(body),
         });
-        if (res.ok) {
-            alert(await res.text());
-        } else {
+        if (res.ok) alert(await res.text());
+        else {
             alert("ERROR\n" + res.statusText);
             console.error(await res.text());
         }
+        fetchData();
     };
     function arrayBufferToBase64(buffer: ArrayBuffer) {
         var binary = "";
@@ -79,16 +79,26 @@
         return window.btoa(binary);
     }
 
-    const fetchData = (): [
-        Promise<{ name: string; file_name: string; time: string | null }[]>,
-        Promise<string[]>
-    ] => [
-        fetch("/api/tasks").then(r => r.json()),
-        fetch("/api/files").then(r => r.json()),
-    ];
+    const del = async (name: string) => {
+        const res = await fetch(`/api/task/${name}`, {
+            method: "DELETE",
+        });
+        if (res.ok) alert(await res.text());
+        else {
+            alert("ERROR\n" + res.statusText);
+            console.error(await res.text());
+        }
+        fetchData();
+    };
 
-    const [tasks, files] = fetchData();
-    tasks.then(console.debug).catch(console.error);
+    let tasks: Promise<{ name: string; file_name: string; time: string }[]>,
+        files: Promise<string[]>;
+    const fetchData = () => {
+        tasks = fetch("/api/tasks").then(r => r.json());
+        files = fetch("/api/files").then(r => r.json());
+    };
+    fetchData();
+    tasks!.then(console.debug).catch(console.error);
 
     let schedule: "now" | "scheduled" | "recurring";
 </script>
@@ -104,8 +114,7 @@
                 <select
                     name="file_name"
                     id="file_name"
-                    bind:value={form.file_name}
-                >
+                    bind:value={form.file_name}>
                     {#await files}
                         <option disabled>Loading...</option>
                     {:then data}
@@ -122,8 +131,7 @@
                             type="file"
                             name="file_blob"
                             id="file_blob"
-                            bind:files={form.files}
-                        />
+                            bind:files={form.files} />
                         <!-- <input
                             type="text"
                             name="file_url"
@@ -147,22 +155,19 @@
                         <input
                             type="datetime-local"
                             name="time"
-                            bind:value={form.time}
-                        />
+                            bind:value={form.time} />
                     {:else if schedule === "recurring"}
                         <div
                             class="add-btn"
                             on:click={() =>
-                                (form.times = [...form.times, null])}
-                        >
+                                (form.times = [...form.times, null])}>
                             +
                         </div>
                         {#each form.times as _, i}
                             <input
                                 type="datetime-local"
                                 name="time"
-                                bind:value={form.times[i]}
-                            />
+                                bind:value={form.times[i]} />
                         {/each}
                     {/if}
                 </div>
@@ -172,6 +177,7 @@
         </form>
         <p>{JSON.stringify({ ...form, schedule })}</p>
     </section>
+
     <section class="card">
         <h1>Következő csengetések</h1>
         {#await tasks}
@@ -180,9 +186,12 @@
             <div class="grid">
                 {#each data as item}
                     <div class="task">
-                        <!-- <p>{JSON.stringify(item)}</p> -->
+                        <button class="delete" on:click={() => del(item.name)}>
+                            X
+                        </button>
                         <p>{item.name}</p>
-                        <p>{item.time && new Date(item.time).toISOString()}</p>
+                        <p>{new Date(item.time).toISOString()}</p>
+                        <!-- TODO: display proper date for recurring tasks -->
                     </div>
                 {/each}
             </div>
@@ -273,6 +282,25 @@
         display: grid;
     }
     .task {
-        place-self: stretch;
+        place-self: center;
+        padding: 1rem;
+        position: relative;
+
+        border: rgb(0, 90, 255) 3px solid;
+        border-radius: 8px;
+    }
+    .delete {
+        color: red;
+        background: none;
+        border: none;
+
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        padding: 0.2rem;
+    }
+
+    .delete:active {
+        color: crimson;
     }
 </style>
