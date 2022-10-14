@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         .run((
             var("HOST")
                 .map(|s| s.parse::<IpAddr>().expect("invalid $HOST"))
-                .unwrap_or([0, 0, 0, 0].into()),
+                .unwrap_or_else(|_| [0, 0, 0, 0].into()),
             var("PORT")
                 .map(|s| s.parse().expect("invalid $PORT"))
                 .unwrap_or(8080u16),
