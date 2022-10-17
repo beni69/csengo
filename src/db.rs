@@ -1,4 +1,7 @@
-use crate::{schedule_recurring, schedule_task, File, Task};
+use crate::{
+    scheduler::{schedule_recurring, schedule_task},
+    File, Task,
+};
 use chrono::{NaiveTime, Utc};
 use rodio::Sink;
 use rusqlite::{params, Connection, OptionalExtension, Result};
@@ -8,6 +11,9 @@ use tokio::sync::Mutex;
 pub(crate) type Db = Arc<Mutex<Connection>>;
 
 const DB_FILE: &str = "./csengo.db";
+
+// the format of recurring times in the db
+pub(crate) static TIMEFMT: &str = "%H:%M";
 
 pub(crate) fn init() -> Result<(Db, bool)> {
     let db_new = !Path::new(DB_FILE).try_exists().unwrap_or(false);
@@ -115,7 +121,7 @@ pub(crate) async fn list_tasks(conn: Db) -> Result<Vec<Task>> {
                     .get::<_, String>(3)?
                     .split(';')
                     .map(|s| {
-                        NaiveTime::parse_from_str(s, crate::TIMEFMT).map_err(|e| {
+                        NaiveTime::parse_from_str(s, TIMEFMT).map_err(|e| {
                             rusqlite::Error::FromSqlConversionFailure(
                                 3,
                                 rusqlite::types::Type::Text,
