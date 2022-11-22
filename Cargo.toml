@@ -5,7 +5,7 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-anyhow = "1.0.65"
+anyhow = "1.0.63"
 base64 = "0.13.0"
 bytes = { version = "1.2.1", features = ["serde"] } # for json
 chrono = { version = "0.4.22", features = ["serde"] }
@@ -15,7 +15,7 @@ rodio = "0.16.0"
 rusqlite = { version = "0.28.0", features = ["bundled", "chrono"] }
 rust-embed = "6.4.1"
 serde = { version = "1.0.144", features = ["derive"] }
-tokio = { version = "1.21.1", features = ["full"] }
+tokio = { version = "1.21.1", features = ["rt", "macros"] }
 warp = { version = "0.3.2", default-features = false }
 warp-embed = "0.4.0"
 

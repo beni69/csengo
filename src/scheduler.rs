@@ -1,22 +1,21 @@
-use crate::{db, play_file};
-use chrono::{DateTime, NaiveTime, Utc};
-use rodio::Sink;
 use std::sync::Arc;
+
+use crate::{db, player::Player};
+use chrono::{DateTime, NaiveTime, Utc};
 use tokio::time::{interval_at, Duration, Instant, MissedTickBehavior};
 
 pub(crate) fn schedule_task(
     name: String,
     file_name: String,
     time: &DateTime<Utc>,
-    conn: db::Db,
-    sink: Arc<Sink>,
+    player: Arc<Player>,
 ) -> anyhow::Result<()> {
     let diff = (*time - Utc::now()).to_std()?;
     tokio::task::spawn(async move {
         debug!("{}: waiting {}s", name, diff.as_secs());
         tokio::time::sleep(diff).await;
         {
-            match db::exists_task(&*conn.lock().await, &name) {
+            match player.db_name(db::exists_task, &name).await {
                 Ok(b) => {
                     if !b {
                         warn!("{name}: would've played, but the task was since deleted");
@@ -28,10 +27,10 @@ pub(crate) fn schedule_task(
                 }
             }
         }
-        if let Err(e) = play_file(&file_name, &conn, &sink).await {
+        if let Err(e) = player.play_file(&file_name).await {
             error!("error while playing {}:\n{e:#?}", &file_name);
         }
-        if let Err(e) = db::delete_task(&*conn.lock().await, &name) {
+        if let Err(e) = player.db_name(db::delete_task, &name).await {
             error!("{name}: failed to delete task after scheduled play\n{e:#?}");
         };
     });
@@ -42,8 +41,7 @@ pub(crate) fn schedule_recurring(
     name: String,
     file_name: String,
     times: Vec<NaiveTime>,
-    conn: db::Db,
-    sink: Arc<Sink>,
+    player: Arc<Player>,
 ) -> anyhow::Result<()> {
     for time in times {
         let diff: Duration = match (time - Utc::now().time()).to_std() {
@@ -60,15 +58,14 @@ pub(crate) fn schedule_recurring(
         let start: Instant = Instant::now() + diff;
         let name = name.clone();
         let fname = file_name.clone();
-        let conn = conn.clone();
-        let sink = sink.clone();
+        let player = player.clone();
         tokio::task::spawn(async move {
             let mut interval = interval_at(start, Duration::from_secs(24 * 60 * 60));
             interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
 
             loop {
                 interval.tick().await;
-                if let Err(e) = play_file(&fname, &conn, &sink).await {
+                if let Err(e) = player.play_file(&fname).await {
                     error!("{name}: recurring play failed\n{e:#?}");
                 } else {
                     debug!("{name}: added to queue, going back to sleep");

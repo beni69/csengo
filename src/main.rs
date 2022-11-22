@@ -1,4 +1,5 @@
 mod db;
+mod player;
 mod scheduler;
 mod server;
 
@@ -6,17 +7,12 @@ mod server;
 extern crate log;
 use bytes::Bytes;
 use chrono::{DateTime, NaiveTime, SecondsFormat, Utc};
-use rodio::{
-    source::{SineWave, Source},
-    Decoder, OutputStream, OutputStreamHandle, Sink,
-};
 use serde::{Deserialize, Serialize};
-use std::{env, io::Cursor, sync::Arc};
-use tokio::time::Duration;
+use std::env;
 
 const GIT_REF: &str = include_str!("../.git/refs/heads/main");
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "warp=info,csengo=debug");
@@ -25,19 +21,21 @@ async fn main() -> anyhow::Result<()> {
 
     info!("csengo v{} - starting...", &GIT_REF[0..7]);
 
-    // audio setup
-    let (_stream, stream_handle): (OutputStream, OutputStreamHandle) = OutputStream::try_default()?;
-    let sink = Arc::new(Sink::try_new(&stream_handle)?);
-
     // db setup
     let (conn, db_new) = db::init()?;
+
+    // audio setup
+    let stream = player::Player::new_stream();
+    let s: &'static rodio::OutputStreamHandle = &Box::leak(Box::new(stream)).1;
+    let player = player::Player::new(s, conn);
+
     if !db_new {
-        let l = db::load(conn.clone(), sink.clone()).await?;
+        let l = db::load(player.clone()).await?;
         info!("old tasks loaded from db: {l}")
     }
 
     // web server setup
-    server::init(conn, sink).await
+    server::init(player).await
 }
 
 // === data structures ===
@@ -158,26 +156,4 @@ impl Task {
 struct File {
     name: String,
     data: Bytes,
-}
-
-// === playing sounds ===
-fn play_buf(buf: Bytes, sink: &Sink) -> anyhow::Result<()> {
-    let src = Decoder::new(Cursor::new(buf))?;
-    sink.append(src);
-    Ok(())
-}
-async fn play_file(fname: &str, conn: &db::Db, sink: &Sink) -> anyhow::Result<()> {
-    let file = db::get_file(&*conn.lock().await, fname)?;
-    debug!("playing: {fname}");
-    play_buf(file.data, sink)
-}
-fn playtest(sink: &Sink) {
-    // taken from https://docs.rs/rodio
-    // Add a dummy source for the sake of the example.
-    let source = SineWave::new(880.0)
-        .take_duration(Duration::from_secs_f32(1.0))
-        .amplify(0.20);
-    sink.append(source);
-    // sink.sleep_until_end();
-    // sink.detach();
 }

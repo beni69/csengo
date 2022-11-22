@@ -80,16 +80,27 @@
     }
 
     const del = async (name: string) => {
-        const res = await fetch(`/api/task/${name}`, {
-            method: "DELETE",
-        });
-        if (res.ok) alert(await res.text());
-        else {
-            alert("ERROR\n" + res.statusText);
-            console.error(await res.text());
-        }
-        fetchData();
-    };
+            const res = await fetch(`/api/task/${name}`, {
+                method: "DELETE",
+            });
+            if (res.ok) alert(await res.text());
+            else {
+                alert("ERROR\n" + res.statusText);
+                console.error(await res.text());
+            }
+            fetchData();
+        },
+        stop = async () => {
+            const res = await fetch(`/api/stop`, {
+                method: "POST",
+            });
+            if (res.ok) alert(await res.text());
+            else {
+                alert("ERROR\n" + res.statusText);
+                console.error(await res.text());
+            }
+            fetchData();
+        };
 
     let tasks: Promise<
             {
@@ -139,11 +150,6 @@
                             name="file_blob"
                             id="file_blob"
                             bind:files={form.files} />
-                        <!-- <input
-                            type="text"
-                            name="file_url"
-                            id="file_url"
-                            placeholder="File URL" /> -->
                     </div>
                 {/if}
             </label>
@@ -180,8 +186,9 @@
                 </div>
             </label>
 
-            <input type="submit" value="Go" class="btn" />
+            <input type="submit" value="Go" class="btn go" />
         </form>
+        <button class="btn stop" on:click={stop}>STOP ALL SOUNDS</button>
         <p>{JSON.stringify({ ...form, schedule })}</p>
     </section>
 
@@ -256,7 +263,8 @@
         align-items: center;
     }
 
-    input {
+    input,
+    .btn {
         border: 2px solid rgb(0, 90, 255);
         border-radius: 8px;
         padding: 0.3rem;
@@ -268,12 +276,6 @@
     }
 
     .btn {
-        background-image: linear-gradient(
-            to right,
-            #00d2ff 0%,
-            #3a7bd5 51%,
-            #00d2ff 100%
-        );
         padding: 15px 45px;
         text-align: center;
         text-transform: uppercase;
@@ -286,6 +288,27 @@
         color: #fff;
         text-decoration: none;
         box-shadow: 0 0 20px #eee;
+    }
+
+    .btn.go {
+        background-image: linear-gradient(
+            to right,
+            #00d2ff 0%,
+            #3a7bd5 51%,
+            #00d2ff 100%
+        );
+    }
+
+    .btn.stop {
+        background-image: linear-gradient(
+            to right,
+            #e52d27 0%,
+            #b31217 51%,
+            #e52d27 100%
+        );
+        border: 2px solid #b31217;
+        font-size: 0.7em;
+        padding: 1em;
     }
 
     .grid {

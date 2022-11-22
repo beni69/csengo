@@ -1,9 +1,9 @@
 use crate::{
+    player::Player,
     scheduler::{schedule_recurring, schedule_task},
     File, Task,
 };
 use chrono::{NaiveTime, Utc};
-use rodio::Sink;
 use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
@@ -15,7 +15,7 @@ const DB_FILE: &str = "./csengo.db";
 // the format of recurring times in the db
 pub(crate) static TIMEFMT: &str = "%H:%M";
 
-pub(crate) fn init() -> Result<(Db, bool)> {
+pub(crate) fn init() -> Result<(Connection, bool)> {
     let db_new = !Path::new(DB_FILE).try_exists().unwrap_or(false);
     let conn = Connection::open(DB_FILE)?;
     if db_new {
@@ -34,10 +34,11 @@ pub(crate) fn init() -> Result<(Db, bool)> {
         )?;
     }
     info!("db init successful");
-    Ok((Arc::new(Mutex::new(conn)), db_new))
+    Ok((conn, db_new))
 }
-pub(crate) async fn load(conn: Db, sink: Arc<Sink>) -> anyhow::Result<usize> {
-    let tasks = list_tasks(conn.clone()).await?;
+pub(crate) async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
+    let conn = &*player.conn.lock().await;
+    let tasks = list_tasks(conn)?;
     let mut len = tasks.len();
     for task in tasks {
         match task {
@@ -48,17 +49,17 @@ pub(crate) async fn load(conn: Db, sink: Arc<Sink>) -> anyhow::Result<usize> {
             } => {
                 if (time - Utc::now()) < chrono::Duration::zero() {
                     debug!("{name}: expired, skipping");
-                    delete_task(&*conn.lock().await, &name)?;
+                    delete_task(conn, &name)?;
                     len -= 1;
                     continue;
                 }
-                schedule_task(name, file_name, &time, conn.clone(), sink.clone())?;
+                schedule_task(name, file_name, &time, player.clone())?;
             }
             Task::Recurring {
                 name,
                 file_name,
                 time,
-            } => schedule_recurring(name, file_name, time, conn.clone(), sink.clone())?,
+            } => schedule_recurring(name, file_name, time, player.clone())?,
             _ => unreachable!("Task::Now shouldn't be stored in the db"),
         }
     }
@@ -72,8 +73,7 @@ pub(crate) fn insert_file(conn: &Connection, file: File) -> Result<()> {
     )
     .map(|_| ())
 }
-pub(crate) async fn list_files(conn: Db) -> Result<Vec<String>> {
-    let conn = conn.lock().await;
+pub(crate) fn list_files(conn: &Connection) -> Result<Vec<String>> {
     let mut s = conn.prepare("SELECT name FROM files")?;
     let res = s.query_map([], |r| r.get(0))?;
     res.collect()
@@ -99,8 +99,7 @@ pub(crate) fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     )
     .map(|_| ())
 }
-pub(crate) async fn list_tasks(conn: Db) -> Result<Vec<Task>> {
-    let conn = conn.lock().await;
+pub(crate) fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut s = conn.prepare("SELECT * FROM tasks")?;
     let res = s.query_map([], |r| {
         Ok(match r.get::<_, String>(0)?.as_str() {
