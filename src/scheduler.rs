@@ -1,7 +1,6 @@
-use std::sync::Arc;
-
 use crate::{db, player::Player};
 use chrono::{DateTime, NaiveTime, Utc};
+use std::sync::Arc;
 use tokio::time::{interval_at, Duration, Instant, MissedTickBehavior};
 
 pub(crate) fn schedule_task(
@@ -44,17 +43,21 @@ pub(crate) fn schedule_recurring(
     player: Arc<Player>,
 ) -> anyhow::Result<()> {
     for time in times {
-        let diff: Duration = match (time - Utc::now().time()).to_std() {
-            Ok(d) => d,
-            Err(_) => ((Utc::today()
-                .and_time(time)
-                .expect("datetime construction failed")
-                + chrono::Duration::days(1))
-                - (Utc::now()))
-            .to_std()
-            .expect("time went backwards"),
+        let (diff, tmrw): (Duration, bool) = match (time - Utc::now().time()).to_std() {
+            Ok(d) => (d, false),
+            Err(_) => (
+                ((Utc::now() + chrono::Duration::days(1))
+                    .date_naive()
+                    .and_time(time)
+                    - Utc::now().naive_utc())
+                .to_std()?,
+                true,
+            ),
         };
-        debug!("{name} (recurring): waiting {diff:.0?} for first play");
+        debug!(
+            "{name} (recurring): waiting {diff:.0?} for first play {}",
+            if tmrw { "+" } else { "" }
+        );
         let start: Instant = Instant::now() + diff;
         let name = name.clone();
         let fname = file_name.clone();

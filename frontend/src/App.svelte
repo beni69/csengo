@@ -170,12 +170,12 @@
                             name="time"
                             bind:value={form.time} />
                     {:else if schedule === "recurring"}
-                        <div
+                        <button
                             class="add-btn"
-                            on:click={() =>
+                            on:click|preventDefault={() =>
                                 (form.times = [...form.times, null])}>
                             +
-                        </div>
+                        </button>
                         {#each form.times as _, i}
                             <input
                                 type="datetime-local"
@@ -221,7 +221,7 @@
 <style>
     :global(:root) {
         width: 100vw;
-        height: 100vh;
+        min-height: 100vh;
 
         font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
         font-size: 16px;
@@ -237,7 +237,9 @@
             rgba(9, 9, 121, 1) 35%,
             rgba(0, 212, 255, 1) 100%
         );
+    }
 
+    main {
         display: flex;
         align-items: center;
         justify-content: space-evenly;
@@ -316,11 +318,15 @@
     }
     .task {
         place-self: center;
-        padding: 1rem;
         position: relative;
-
-        border: rgb(0, 90, 255) 3px solid;
+        padding: 1rem;
+        margin: 0.5em;
+        box-shadow: 1px 1px 5px 1px #40618da0;
+        transition: 0.1s linear box-shadow;
         border-radius: 8px;
+    }
+    .task:hover {
+        box-shadow: 1px 1px 5px 1px #40618d;
     }
     .delete {
         color: red;
@@ -331,6 +337,10 @@
         top: 1rem;
         right: 1rem;
         padding: 0.2rem;
+        transition: 0.1s linear text-shadow;
+    }
+    .delete:hover {
+        text-shadow: 0 0 3px red;
     }
 
     .delete:active {
