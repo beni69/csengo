@@ -1,0 +1,6 @@
+[Service]
+Type=simple
+ExecStart=/home/studio/csengo/csengo
+
+[Install]
+WantedBy=default.target
