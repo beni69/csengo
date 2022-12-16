@@ -35,3 +35,11 @@ kelleni:
 -   rust, cargo
 -   nodejs, pnpm
 -   linuxon alsa header fileok (`libasound2-dev`)
+
+## todo
+
+- [ ] better logging (now playing)
+- [ ] frontend loading toast (and prevent user from sending twice)
+- [ ] frontend localize dates
+- [ ] now playing section with controls (will need a custom sink implementation)
+- [ ] maybe possibly look into NOT base64 encoding the file contents (multipart form?)
