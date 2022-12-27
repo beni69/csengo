@@ -1,4 +1,5 @@
 <script lang="ts">
+    import toast, { Toaster } from "svelte-french-toast";
     import { z } from "zod";
 
     const dateZ = z
@@ -41,33 +42,40 @@
         times: [null] as Array<Date | null>,
         files: null as FileList | null,
     };
+    let sending = false;
     const submit = async () => {
-        const time = schedule === "recurring" ? form.times : form.time;
+        const time =
+            schedule === "recurring"
+                ? form.times
+                : schedule === "scheduled"
+                ? form.time
+                : null;
         const parse = Form.safeParse({ ...form, time });
         if (!parse.success) return void alert(JSON.stringify(parse.error));
 
-        const f = await form.files?.[0]
-            ?.arrayBuffer()
-            .then(arrayBufferToBase64);
-        f && console.debug(`file size: ${f.length}`);
+        if (sending) return void toast.error("Already sending");
+        sending = true;
+
+        let f;
+        if (form.files?.length) {
+            const t = toast.loading("Encoding file...");
+            f = await form.files?.[0]?.arrayBuffer().then(arrayBufferToBase64);
+            console.debug(`file size: ${f.length}`);
+            toast.dismiss(t);
+        }
 
         const body = { task: { ...parse.data, type: schedule }, file: f };
         console.debug(body);
         console.debug(parse.data.time, form.time);
 
-        let res = await fetch("/api", {
+        await fetchToast("/api", {
             method: "POST",
             headers: {
                 "content-type": "application/json",
             },
             body: JSON.stringify(body),
         });
-        if (res.ok) alert(await res.text());
-        else {
-            alert("ERROR\n" + res.statusText);
-            console.error(await res.text());
-        }
-        fetchData();
+        sending = false;
     };
     function arrayBufferToBase64(buffer: ArrayBuffer) {
         var binary = "";
@@ -79,49 +87,82 @@
         return window.btoa(binary);
     }
 
-    const del = async (name: string) => {
-            const res = await fetch(`/api/task/${name}`, {
+    const del = async (name: string) =>
+            fetchToast(`/api/task/${name}`, {
                 method: "DELETE",
-            });
-            if (res.ok) alert(await res.text());
-            else {
-                alert("ERROR\n" + res.statusText);
-                console.error(await res.text());
-            }
-            fetchData();
-        },
-        stop = async () => {
-            const res = await fetch(`/api/stop`, {
+            }),
+        stop = async () =>
+            fetchToast("/api/stop", {
                 method: "POST",
             });
-            if (res.ok) alert(await res.text());
+
+    let status: Promise<{
+        tasks: {
+            name: string;
+            file_name: string;
+            time: any;
+            type: typeof schedule;
+        }[];
+        files: string[];
+        playing: { name: string };
+    }>;
+    const fetchData = async (loading?: boolean) => {
+            const p = fetch("/api/status").then(r => r.json());
+            if (loading) {
+                status = p;
+                await status;
+            } else {
+                status = Promise.resolve(await p);
+            }
+        },
+        fetchRealtime = async () => {
+            while (true) {
+                const res = await fetch("/api/status/realtime").then(r =>
+                    r.json()
+                );
+                console.debug("received realtime update:", res);
+                status = Promise.resolve({
+                    ...(await status),
+                    playing: res,
+                });
+            }
+        },
+        fetchToast = async (...fetchArgs: Parameters<typeof window.fetch>) => {
+            const t = toast.loading("Sending request...");
+            let res = await fetch(...fetchArgs);
+            toast.dismiss(t);
+            if (res.ok) toast.success(await res.text());
             else {
-                alert("ERROR\n" + res.statusText);
+                toast.error("ERROR\n" + res.statusText);
                 console.error(await res.text());
             }
-            fetchData();
+            await fetchData();
         };
-
-    let tasks: Promise<
-            {
-                name: string;
-                file_name: string;
-                time: any;
-                type: typeof schedule;
-            }[]
-        >,
-        files: Promise<string[]>;
-    const fetchData = () => {
-        tasks = fetch("/api/tasks").then(r => r.json());
-        files = fetch("/api/files").then(r => r.json());
-    };
-    fetchData();
-    tasks!.then(console.debug).catch(console.error);
+    fetchData(true).then(fetchRealtime);
+    status!.then(console.debug).catch(console.error);
 
     let schedule: "now" | "scheduled" | "recurring";
 </script>
 
+<Toaster />
+
 <main>
+    <section class="card">
+        <h1>Now playing</h1>
+        <div>
+            {#await status}
+                <p>Loading...</p>
+            {:then data}
+                {#if data?.playing?.name}
+                    <p>{data.playing.name}</p>
+                    <button class="btn stop" on:click={stop}
+                        >STOP ALL SOUNDS</button>
+                {:else}
+                    <p>Nothing's playing</p>
+                {/if}
+            {/await}
+        </div>
+    </section>
     <section class="card">
         <h1>Új csengetés</h1>
         <form on:submit|preventDefault={submit}>
@@ -133,11 +174,11 @@
                     name="file_name"
                     id="file_name"
                     bind:value={form.file_name}>
-                    {#await files}
+                    {#await status}
                         <option disabled>Loading...</option>
                     {:then data}
                         <option value="$NEW">Új file</option>
-                        {#each data as item}
+                        {#each data.files as item}
                             <option value={item}>{item}</option>
                         {/each}
                     {/await}
@@ -164,7 +205,6 @@
 
                 <div>
                     {#if schedule === "scheduled"}
-                        <!--  -->
                         <input
                             type="datetime-local"
                             name="time"
@@ -194,11 +234,11 @@
 
     <section class="card">
         <h1>Következő csengetések</h1>
-        {#await tasks}
+        {#await status}
             <p>loading</p>
         {:then data}
             <div class="grid">
-                {#each data as item}
+                {#each data.tasks as item}
                     <div class="task">
                         <button class="delete" on:click={() => del(item.name)}>
                             X
@@ -257,6 +297,10 @@
 
         min-width: 33vw;
         max-width: calc(100vw - 50px);
+    }
+    :global(.grad-bg) {
+        backdrop-filter: saturate(180%) blur(10px);
+        background-color: rgba(255, 255, 255, 0.4);
     }
 
     form {

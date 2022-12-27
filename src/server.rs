@@ -1,6 +1,6 @@
 use crate::{
     db,
-    player::Player,
+    player::{NowPlaying, Player},
     scheduler::{schedule_recurring, schedule_task},
     File, Task,
 };
@@ -16,23 +16,24 @@ use warp::{hyper::StatusCode, reply::json, Filter};
 struct Frontend;
 
 pub(crate) async fn init(p: Arc<Player>) -> ! {
-    let tasks = warp::path("tasks")
+    let status = warp::path("status")
         .and(warp::path::end())
         .and(warp::get())
         .map({
-            let c = p.conn.clone();
-            move || ("list_tasks", c.clone(), db::list_tasks)
+            let p = p.clone();
+            move || p.clone()
         })
-        .then(wrap_db);
+        .then(get_status);
 
-    let files = warp::path("files")
+    let realtime = warp::path("status")
+        .and(warp::path("realtime"))
         .and(warp::path::end())
         .and(warp::get())
         .map({
-            let c = p.conn.clone();
-            move || ("list_files", c.clone(), db::list_files)
+            let p = p.clone();
+            move || p.clone()
         })
-        .then(wrap_db);
+        .then(get_realtime);
 
     let post = warp::path::end()
         .and(warp::post())
@@ -57,7 +58,7 @@ pub(crate) async fn init(p: Arc<Player>) -> ! {
         .and(warp::get().or(warp::post()))
         .map({
             let p = p.clone();
-            move |_| unsafe {
+            move |_| {
                 p.stop();
                 "OK"
             }
@@ -74,11 +75,22 @@ pub(crate) async fn init(p: Arc<Player>) -> ! {
             }
         });
 
-    let api = warp::path("api").and(tasks.or(files).or(post).or(delete).or(stop).or(playtest));
+    let api = warp::path("api").and(
+        status
+            .or(realtime)
+            .or(post)
+            .or(delete)
+            .or(stop)
+            .or(playtest),
+    );
 
     let frontend = warp::get().and(warp_embed::embed(&Frontend));
+    let server = frontend.or(api).with(warp::log("server"));
 
-    warp::serve(frontend.or(api).with(warp::log("server")))
+    #[cfg(debug_assertions)]
+    let server = server.with(warp::cors().allow_any_origin());
+
+    warp::serve(server)
         .run((
             var("HOST")
                 .map(|s| s.parse::<IpAddr>().expect("invalid $HOST"))
@@ -92,23 +104,56 @@ pub(crate) async fn init(p: Arc<Player>) -> ! {
     unreachable!()
 }
 
-async fn wrap_db<T: Serialize>(
-    (name, c, f): (
-        &'static str,
-        db::Db,
-        impl Fn(&rusqlite::Connection) -> rusqlite::Result<T>,
-    ),
-) -> Box<dyn warp::Reply> {
-    match f(&*c.lock().await) {
-        Ok(v) => Box::new(json(&v)),
+async fn get_status(p: Arc<Player>) -> Box<dyn warp::Reply> {
+    let conn = &*p.conn.lock().await;
+    let tasks = match db::list_tasks(conn) {
+        Ok(x) => x,
         Err(e) => {
-            error!("(list {name}): db read failed\n{e:#?}");
-            Box::new(warp::reply::with_status(
-                format!("failed to get {name}"),
+            return Box::new(err_to_reply(
+                e,
+                "list tasks",
+                "failed to get tasks",
                 StatusCode::INTERNAL_SERVER_ERROR,
             ))
         }
-    }
+    };
+    let files = match db::list_files(conn) {
+        Ok(x) => x,
+        Err(e) => {
+            return Box::new(err_to_reply(
+                e,
+                "list files",
+                "failed to get files",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        }
+    };
+    Box::new(json(&Status {
+        tasks,
+        files,
+        playing: &p.now_playing(),
+    }))
+}
+
+async fn get_realtime(p: Arc<Player>) -> Box<dyn warp::Reply> {
+    let mut rx = p.np_realtime();
+    if let Err(e) = rx.changed().await {
+        return Box::new(err_to_reply(
+            e,
+            "rt_recv",
+            "failed to read realtime status",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    };
+    let np = rx.borrow();
+    Box::new(json(&*np))
+}
+
+#[derive(Debug, Serialize)]
+struct Status<'a> {
+    tasks: Vec<Task>,
+    files: Vec<String>,
+    playing: &'a Option<NowPlaying>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +173,7 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
                 req.task.get_name(),
                 req.task.get_file_name()
             );
-            if let Err(e) = player.play_buf(file) {
+            if let Err(e) = player.play_buf(file, req.task.get_file_name()) {
                 error!("playing failed: {}\n{e:#?}", req.task.get_name());
                 return Box::new(warp::reply::with_status(
                     "failed to play file",
@@ -150,7 +195,6 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
             },
         ) {
             error!("failed to save file: {}\n{e:#?}", req.task.get_file_name());
-            // return Box::new(warp::reply::with_status(     "failed to save file",     StatusCode::INSUFFICIENT_STORAGE, ));
             return Box::new(err_to_reply(
                 e,
                 req.task.get_file_name(),
@@ -180,7 +224,6 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
                 Ok(_) => (),
                 Err(e) => {
                     error!("{}: invalid time: {e:#?}", name);
-                    // return Box::new(warp::reply::with_status(     "time must be in the future",     StatusCode::BAD_REQUEST, ));
                     return Box::new(err_to_reply(
                         e,
                         name,
@@ -192,7 +235,6 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
 
             if let Err(e) = db::insert_task(&*player.conn.lock().await, &req.task) {
                 error!("{name}: db insert failed\n{e:#?}");
-                // return Box::new(warp::reply::with_status(     "failed to save task",     StatusCode::INTERNAL_SERVER_ERROR, ));
                 return Box::new(err_to_reply(
                     e,
                     name,

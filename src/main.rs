@@ -2,6 +2,7 @@ mod db;
 mod player;
 mod scheduler;
 mod server;
+mod sink;
 
 #[macro_use]
 extern crate log;
@@ -25,9 +26,8 @@ async fn main() -> anyhow::Result<()> {
     let (conn, db_new) = db::init()?;
 
     // audio setup
-    let stream = player::Player::new_stream();
-    let s: &'static rodio::OutputStreamHandle = &Box::leak(Box::new(stream)).1;
-    let player = player::Player::new(s, conn);
+    let (controller, np_rx, _stream, _handle) = sink::Controller::init();
+    let player = player::Player::new(controller, np_rx, conn);
 
     if !db_new {
         let l = db::load(player.clone()).await?;
@@ -55,7 +55,6 @@ enum Task {
     Recurring {
         name: String,
         file_name: String,
-        // time: Vec<DateTime<Utc>>,
         time: Vec<NaiveTime>,
     },
 }

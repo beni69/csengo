@@ -1,47 +1,58 @@
-use crate::db;
+use crate::{
+    db,
+    sink::{Controller, Track},
+};
 use anyhow::Result;
 use bytes::Bytes;
-use rodio::{source::SineWave, Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{source::SineWave, Decoder, Source};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::{io::Cursor, sync::Arc, time::Duration};
-use tokio::sync::Mutex;
+use tokio::sync::watch::{Receiver, Ref};
 
-pub(crate) struct Player {
-    pub sink: Sink,
-    stream: &'static OutputStreamHandle,
+pub struct Player {
+    pub controller: Arc<Controller>,
     pub conn: db::Db,
+    np_rx: Receiver<Option<NowPlaying>>,
 }
 impl Player {
-    pub fn new(stream: &'static OutputStreamHandle, conn: Connection) -> Arc<Self> {
-        let sink = Sink::try_new(stream).unwrap();
+    pub fn new(
+        controller: Arc<Controller>,
+        np_rx: Receiver<Option<NowPlaying>>,
+        conn: Connection,
+    ) -> Arc<Self> {
         Arc::new(Player {
-            sink,
-            stream,
-            conn: Arc::new(Mutex::new(conn)),
+            controller,
+            conn: Arc::new(tokio::sync::Mutex::new(conn)),
+            np_rx,
         })
     }
-    pub fn new_stream() -> (OutputStream, OutputStreamHandle) {
-        rodio::OutputStream::try_default().unwrap()
-    }
 
-    /// unsafe should be fine as long as the application is single threaded
-    pub unsafe fn stop(&self) {
-        self.sink.stop();
-        // `Sink` is no longer usable after stopping it, so we create a new one
-        // probably a bug in rodio
-        let p: *mut Sink = &self.sink as *const Sink as *mut Sink;
-        *p = Sink::try_new(self.stream).unwrap();
+    pub fn stop(&self) {
+        self.controller.stop();
     }
 
     pub async fn play_file(&self, fname: &str) -> Result<()> {
         let file = db::get_file(&*self.conn.lock().await, fname)?;
-        self.play_buf(file.data)
+        self.play_buf(file.data, fname)
     }
-    pub fn play_buf(&self, buf: Bytes) -> Result<()> {
+    pub fn play_buf(&self, buf: Bytes, fname: &str) -> Result<()> {
         let src = Decoder::new(Cursor::new(buf))?;
-        self.sink.append(src);
+        self.controller.append(Track {
+            src: Box::new(src.convert_samples()),
+            name: Some(fname.into()),
+            signal: None,
+        });
         Ok(())
+    }
+
+    pub fn now_playing(&self) -> Ref<Option<NowPlaying>> {
+        self.np_rx.borrow()
+    }
+    pub fn np_realtime(&self) -> Receiver<Option<NowPlaying>> {
+        let mut rx = self.np_rx.clone();
+        rx.borrow_and_update(); // to make sure to wait for the next value
+        rx
     }
 
     pub fn playtest(&self) {
@@ -50,7 +61,11 @@ impl Player {
         let source = SineWave::new(880.0)
             .take_duration(Duration::from_secs_f32(1.0))
             .amplify(0.20);
-        self.sink.append(source);
+        self.controller.append(Track {
+            src: Box::new(source),
+            name: Some("playtest".into()),
+            signal: None,
+        });
     }
 
     pub async fn db_name<T: Serialize>(
@@ -60,4 +75,11 @@ impl Player {
     ) -> rusqlite::Result<T> {
         f(&*self.conn.lock().await, name)
     }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NowPlaying {
+    pub name: String,
+    // pos: Duration,
+    // len: Duration,
 }

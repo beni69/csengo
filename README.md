@@ -38,8 +38,7 @@ kelleni:
 
 ## todo
 
-- [ ] better logging (now playing)
-- [ ] frontend loading toast (and prevent user from sending twice)
+- [ ] localize dates in the db
 - [ ] frontend localize dates
-- [ ] now playing section with controls (will need a custom sink implementation)
-- [ ] maybe possibly look into NOT base64 encoding the file contents (multipart form?)
+- [ ] now playing duration and timestamp
+- [ ] maybe possibly look into *NOT* base64 encoding the file contents (multipart form?)
