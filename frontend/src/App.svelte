@@ -1,4 +1,12 @@
 <script lang="ts">
+    import {
+        format as formatDate,
+        formatDistanceToNowStrict,
+        formatISO9075,
+        parse as parseDate,
+        subMinutes,
+    } from "date-fns";
+    import huLocale from "date-fns/locale/hu";
     import toast, { Toaster } from "svelte-french-toast";
     import { z } from "zod";
 
@@ -96,13 +104,22 @@
                 method: "POST",
             });
 
+    type Task =
+        | {
+              type: "scheduled";
+              name: string;
+              file_name: string;
+              time: string;
+          }
+        | {
+              type: "recurring";
+              name: string;
+              file_name: string;
+              time: string[];
+          };
+
     let status: Promise<{
-        tasks: {
-            name: string;
-            file_name: string;
-            time: any;
-            type: typeof schedule;
-        }[];
+        tasks: Task[];
         files: string[];
         playing: { name: string };
     }>;
@@ -148,7 +165,7 @@
 
 <main>
     <section class="card">
-        <h1>Now playing</h1>
+        <h1>Most szól</h1>
         <div>
             {#await status}
                 <p>Loading...</p>
@@ -158,7 +175,7 @@
                     <button class="btn stop" on:click={stop}
                         >STOP ALL SOUNDS</button>
                 {:else}
-                    <p>Nothing's playing</p>
+                    <p><i>Jelenleg nem megy semmi</i></p>
                 {/if}
             {/await}
         </div>
@@ -229,7 +246,15 @@
             <input type="submit" value="Go" class="btn go" />
         </form>
         <button class="btn stop" on:click={stop}>STOP ALL SOUNDS</button>
-        <p>{JSON.stringify({ ...form, schedule })}</p>
+        <!-- svelte-ignore a11y-click-events-have-key-events - "secret" button -->
+        <p
+            on:click={e =>
+                (e.currentTarget.innerText = JSON.stringify({
+                    ...form,
+                    schedule,
+                }))}>
+            Debug nézet
+        </p>
     </section>
 
     <section class="card">
@@ -245,9 +270,35 @@
                         </button>
                         <p>{item.name}</p>
                         {#if item.type === "recurring"}
-                            <p>{item.time.join(", ")}</p>
+                            <p>
+                                {item.time
+                                    .map(s =>
+                                        formatDate(
+                                            subMinutes(
+                                                parseDate(
+                                                    s,
+                                                    "HH:mm:ss",
+                                                    new Date(0)
+                                                ),
+                                                new Date().getTimezoneOffset()
+                                            ),
+                                            "HH:mm:ss",
+                                            { locale: huLocale }
+                                        )
+                                    )
+                                    .join(", ")}
+                            </p>
                         {:else}
-                            <p>{new Date(item.time).toISOString()}</p>
+                            <p>
+                                {formatISO9075(new Date(item.time))}
+                                <br />
+                                <i>
+                                    {formatDistanceToNowStrict(
+                                        new Date(item.time),
+                                        { addSuffix: true, locale: huLocale }
+                                    )}
+                                </i>
+                            </p>
                         {/if}
                     </div>
                 {/each}

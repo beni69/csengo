@@ -39,6 +39,6 @@ kelleni:
 ## todo
 
 - [ ] localize dates in the db
-- [ ] frontend localize dates
 - [ ] now playing duration and timestamp
+- [ ] use [systemd credentials](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials) instead of an env file
 - [ ] maybe possibly look into *NOT* base64 encoding the file contents (multipart form?)

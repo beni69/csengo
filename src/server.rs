@@ -243,7 +243,7 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
                 ));
             };
 
-            if let Err(e) = schedule_task(name.clone(), file_name.clone(), time, player) {
+            if let Err(e) = schedule_task(name.clone(), file_name.clone(), *time, player) {
                 return Box::new(err_to_reply(
                     e.root_cause(),
                     name,

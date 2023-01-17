@@ -1,4 +1,4 @@
-use crate::{db, player::Player};
+use crate::{db, mail, player::Player};
 use chrono::{DateTime, NaiveTime, Utc};
 use std::sync::Arc;
 use tokio::time::{interval_at, Duration, Instant, MissedTickBehavior};
@@ -8,10 +8,10 @@ use tokio::time::{interval_at, Duration, Instant, MissedTickBehavior};
 pub(crate) fn schedule_task(
     name: String,
     file_name: String,
-    time: &DateTime<Utc>,
+    time: DateTime<Utc>,
     player: Arc<Player>,
 ) -> anyhow::Result<()> {
-    let diff = (*time - Utc::now()).to_std()?;
+    let diff = (time - Utc::now()).to_std()?;
     tokio::task::spawn(async move {
         debug!("{}: waiting {}s", name, diff.as_secs());
         tokio::time::sleep(diff).await;
@@ -30,6 +30,11 @@ pub(crate) fn schedule_task(
         }
         if let Err(e) = player.play_file(&file_name).await {
             error!("error while playing {}:\n{e:#?}", &file_name);
+        } else {
+            // successful play
+            tokio::task::spawn(async move {
+                mail::task_done(&file_name, &time).await;
+            });
         }
         if let Err(e) = player.db_name(db::delete_task, &name).await {
             error!("{name}: failed to delete task after scheduled play\n{e:#?}");

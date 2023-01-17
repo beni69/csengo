@@ -53,7 +53,7 @@ pub(crate) async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
                     len -= 1;
                     continue;
                 }
-                schedule_task(name, file_name, &time, player.clone())?;
+                schedule_task(name, file_name, time, player.clone())?;
             }
             Task::Recurring {
                 name,

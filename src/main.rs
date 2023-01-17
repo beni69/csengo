@@ -1,4 +1,5 @@
 mod db;
+mod mail;
 mod player;
 mod scheduler;
 mod server;
@@ -33,6 +34,9 @@ async fn main() -> anyhow::Result<()> {
         let l = db::load(player.clone()).await?;
         info!("old tasks loaded from db: {l}")
     }
+
+    // warn if the vars aren't set
+    mail::get_vars();
 
     // web server setup
     server::init(player).await
