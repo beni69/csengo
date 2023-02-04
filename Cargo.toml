@@ -18,7 +18,7 @@ rodio = { version = "0.16.0", default-features = false, features = [
 rusqlite = { version = "0.28.0", features = ["bundled", "chrono"] }
 rust-embed = "6.4.1"
 serde = { version = "1.0.144", features = ["derive"] }
-tokio = { version = "1.23.1", features = ["rt", "macros"] }
+tokio = { version = "1.24.2", features = ["rt", "macros"] }
 warp = { version = "0.3.2", default-features = false }
 warp-embed = "0.4.0"
 
