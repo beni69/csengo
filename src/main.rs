@@ -43,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 // === data structures ===
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
 enum Task {
@@ -146,7 +146,6 @@ impl Task {
                 time,
             } => Some(
                 time.iter()
-                    // .map(|d| d.to_rfc3339_opts(SecondsFormat::Secs, true))
                     .map(|t| t.format(db::TIMEFMT).to_string())
                     .collect::<Vec<String>>()
                     .join(";"),

@@ -1,7 +1,7 @@
 use crate::{
     db,
     player::{NowPlaying, Player},
-    scheduler::{schedule_recurring, schedule_task},
+    scheduler::schedule,
     File, Task,
 };
 use bytes::Bytes;
@@ -163,122 +163,86 @@ struct Post {
 }
 
 async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
-    // a special case for one-off upload instant plays: don't save the file, just play it
+    let name = req.task.get_name();
+    let fname = req.task.get_file_name();
+
     if req.task.is_now() {
+        // a special case for one-off upload instant plays: don't save the file, just play it
         if let Some(file) = req.file {
             let file = base64::decode(file).expect("invalid base64").into();
 
-            info!(
-                "playing {}: {}",
-                req.task.get_name(),
-                req.task.get_file_name()
-            );
-            if let Err(e) = player.play_buf(file, req.task.get_file_name()) {
-                error!("playing failed: {}\n{e:#?}", req.task.get_name());
+            info!("queued {name}: {fname}");
+            if let Err(e) = player.play_buf(file, fname) {
+                error!("playing failed: {name}\n{e:#?}");
                 return Box::new(warp::reply::with_status(
                     "failed to play file",
                     StatusCode::INTERNAL_SERVER_ERROR,
                 ));
             }
-
-            return Box::new("OK");
+        } else if let Err(e) = player.play_file(fname).await {
+            // play it and handle the error
+            return Box::new(err_to_reply(
+                e.root_cause(),
+                name,
+                "playing failed",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
         }
+        return Box::new("OK");
     }
 
+    // save attached file (if any)
     if let Some(file) = req.file {
         let file = base64::decode(file).expect("invalid base64").into();
         if let Err(e) = db::insert_file(
             &*player.conn.lock().await,
             File {
-                name: req.task.get_file_name().clone(),
+                name: fname.clone(),
                 data: file,
             },
         ) {
-            error!("failed to save file: {}\n{e:#?}", req.task.get_file_name());
+            error!("failed to save file: {fname}\n{e:#?}");
             return Box::new(err_to_reply(
                 e,
-                req.task.get_file_name(),
+                fname,
                 "failed to save file",
                 StatusCode::INSUFFICIENT_STORAGE,
             ));
-        };
+        }
     }
 
-    match req.task {
-        Task::Now { name, file_name } => {
-            if let Err(e) = player.play_file(&file_name).await {
-                return Box::new(err_to_reply(
-                    e.root_cause(),
-                    &name,
-                    "playing failed",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            };
+    // check if scheduled task is in the future
+    if let Task::Scheduled {
+        name,
+        file_name: _,
+        time,
+    } = &req.task
+    {
+        if let Err(e) = (*time - Utc::now()).to_std() {
+            error!("{name}: invalid time: {e:#?}");
+            return Box::new(err_to_reply(
+                e,
+                name,
+                "invalid time",
+                StatusCode::BAD_REQUEST,
+            ));
         }
-        Task::Scheduled {
-            ref name,
-            ref file_name,
-            ref time,
-        } => {
-            match (*time - Utc::now()).to_std() {
-                Ok(_) => (),
-                Err(e) => {
-                    error!("{}: invalid time: {e:#?}", name);
-                    return Box::new(err_to_reply(
-                        e,
-                        name,
-                        "invalid time",
-                        StatusCode::BAD_REQUEST,
-                    ));
-                }
-            };
+    }
 
-            if let Err(e) = db::insert_task(&*player.conn.lock().await, &req.task) {
-                error!("{name}: db insert failed\n{e:#?}");
-                return Box::new(err_to_reply(
-                    e,
-                    name,
-                    "failed to save task",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            };
+    // save task to db
+    if let Err(e) = db::insert_task(&*player.conn.lock().await, &req.task) {
+        error!("{name}: db insert failed\n{e:#?}");
+        return Box::new(err_to_reply(
+            e,
+            name,
+            "failed to save task",
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ));
+    }
 
-            if let Err(e) = schedule_task(name.clone(), file_name.clone(), *time, player) {
-                return Box::new(err_to_reply(
-                    e.root_cause(),
-                    name,
-                    "failed to schedule task",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            };
-        }
-        Task::Recurring {
-            ref name,
-            ref file_name,
-            ref time,
-        } => {
-            if let Err(e) = db::insert_task(&*player.conn.lock().await, &req.task) {
-                error!("{name}: db insert failed\n{e:#?}");
-                // return Box::new(warp::reply::with_status(     "failed to save task",     StatusCode::INTERNAL_SERVER_ERROR, ));
-                return Box::new(err_to_reply(
-                    e,
-                    name,
-                    "failed to save task",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            };
-
-            if let Err(e) =
-                schedule_recurring(name.clone(), file_name.clone(), time.clone(), player)
-            {
-                return Box::new(err_to_reply(
-                    e.root_cause(),
-                    name,
-                    "",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            }
-        }
+    let name = name.to_owned();
+    if let Err(e) = schedule(req.task, player) {
+        error!("{name}: schedule failed\n{e:#?}");
     }
 
     Box::new("OK")
@@ -288,6 +252,14 @@ async fn delete_task((name, player): (String, Arc<Player>)) -> Box<dyn warp::Rep
     match player.db_name(db::delete_task, &name).await {
         Ok(v) => {
             if v {
+                if !player.cancel(&name).await {
+                    error!("{name}: failed to issue cancel");
+                    return Box::new(warp::reply::with_status(
+                        "failed to issue cancel",
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    ));
+                }
+
                 Box::new("OK")
             } else {
                 Box::new(warp::reply::with_status(

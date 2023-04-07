@@ -9,6 +9,7 @@ anyhow = "1.0.63"
 base64 = "0.13.0"
 bytes = { version = "1.2.1", features = ["serde"] } # for json
 chrono = { version = "0.4.22", features = ["serde"] }
+futures-util = { version = "0.3.28", default-features = false, features = ["std"] }
 log = "0.4.17"
 mail-send = { version = "0.2.3", default-features = false, features = ["dkim"] }
 pretty_env_logger = "0.4.0"

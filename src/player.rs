@@ -7,13 +7,17 @@ use bytes::Bytes;
 use rodio::{source::SineWave, Decoder, Source};
 use rusqlite::Connection;
 use serde::Serialize;
-use std::{io::Cursor, sync::Arc, time::Duration};
-use tokio::sync::watch::{Receiver, Ref};
+use std::{collections::HashMap, io::Cursor, sync::Arc, time::Duration};
+use tokio::sync::{
+    oneshot,
+    watch::{Receiver, Ref},
+};
 
 pub struct Player {
     pub controller: Arc<Controller>,
     pub conn: db::Db,
     np_rx: Receiver<Option<NowPlaying>>,
+    cancel_map: Arc<tokio::sync::Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 impl Player {
     pub fn new(
@@ -25,6 +29,7 @@ impl Player {
             controller,
             conn: Arc::new(tokio::sync::Mutex::new(conn)),
             np_rx,
+            cancel_map: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
         })
     }
 
@@ -74,6 +79,18 @@ impl Player {
         name: &str,
     ) -> rusqlite::Result<T> {
         f(&*self.conn.lock().await, name)
+    }
+
+    pub async fn create_cancel(&self, key: String) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.cancel_map.lock().await.insert(key, tx);
+        rx
+    }
+    pub async fn cancel(&self, key: &str) -> bool {
+        match self.cancel_map.lock().await.remove(key) {
+            Some(tx) => tx.send(()).is_ok(),
+            None => false,
+        }
     }
 }
 

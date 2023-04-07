@@ -1,10 +1,6 @@
-use crate::{
-    player::Player,
-    scheduler::{schedule_recurring, schedule_task},
-    File, Task,
-};
-use chrono::{NaiveTime, Utc};
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use crate::{player::Player, scheduler::schedule, File, Task};
+use chrono::NaiveTime;
+use rusqlite::{params, Connection, Error, Result, Row};
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
 
@@ -22,15 +18,15 @@ pub(crate) fn init() -> Result<(Connection, bool)> {
         info!("initializing db");
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS tasks (
-            type      TEXT NOT NULL,
-            name      TEXT PRIMARY KEY,
-            file_name TEXT NOT NULL,
-            time      TEXT
-        );
-        CREATE TABLE IF NOT EXISTS files (
-            name      TEXT PRIMARY KEY,
-            data      BLOB
-        );",
+                type      TEXT NOT NULL,
+                name      TEXT PRIMARY KEY,
+                file_name TEXT NOT NULL,
+                time      TEXT
+            );
+            CREATE TABLE IF NOT EXISTS files (
+                name      TEXT PRIMARY KEY,
+                data      BLOB
+            );",
         )?;
     }
     info!("db init successful");
@@ -41,26 +37,10 @@ pub(crate) async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
     let tasks = list_tasks(conn)?;
     let mut len = tasks.len();
     for task in tasks {
-        match task {
-            Task::Scheduled {
-                name,
-                file_name,
-                time,
-            } => {
-                if (time - Utc::now()) < chrono::Duration::zero() {
-                    debug!("{name}: expired, skipping");
-                    delete_task(conn, &name)?;
-                    len -= 1;
-                    continue;
-                }
-                schedule_task(name, file_name, time, player.clone())?;
-            }
-            Task::Recurring {
-                name,
-                file_name,
-                time,
-            } => schedule_recurring(name, file_name, time, player.clone())?,
-            _ => unreachable!("Task::Now shouldn't be stored in the db"),
+        let name = task.get_name().to_owned();
+        if let Err(e) = schedule(task, player.clone()) {
+            len -= 1;
+            warn!("{name} failed to schedule: {e}");
         }
     }
     Ok(len)
@@ -101,50 +81,41 @@ pub(crate) fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
 }
 pub(crate) fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut s = conn.prepare("SELECT * FROM tasks")?;
-    let res = s.query_map([], |r| {
-        Ok(match r.get::<_, String>(0)?.as_str() {
-            "now" => Task::Now {
-                name: r.get(1)?,
-                file_name: r.get(2)?,
-            },
-            "scheduled" => Task::Scheduled {
-                name: r.get(1)?,
-                file_name: r.get(2)?,
-                time: r.get(3)?,
-            },
-            "recurring" => Task::Recurring {
-                name: r.get(1)?,
-                file_name: r.get(2)?,
-                // time: r     .get::<_, String>(3)?     .split(';')     .map(|s| {         DateTime::parse_from_rfc3339(s)             .map(|v| v.into())             .map_err(|e| {                 rusqlite::Error::FromSqlConversionFailure(                     3,                     rusqlite::types::Type::Text,                     Box::new(e),                 )             })     })     .collect::<Result<Vec<DateTime<Utc>>>>()?,
-                time: r
-                    .get::<_, String>(3)?
-                    .split(';')
-                    .map(|s| {
-                        NaiveTime::parse_from_str(s, TIMEFMT).map_err(|e| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                3,
-                                rusqlite::types::Type::Text,
-                                Box::new(e),
-                            )
-                        })
-                    })
-                    .collect::<Result<Vec<NaiveTime>>>()?,
-            },
-            _ => unreachable!(),
-        })
-    })?;
+    let res = s.query_map([], parse_task)?;
     res.collect()
 }
 pub(crate) fn delete_task(conn: &Connection, name: &str) -> Result<bool> {
     Ok(conn.execute("DELETE FROM tasks WHERE name == ?", (name,))? == 1)
 }
-pub(crate) fn exists_task(conn: &Connection, name: &str) -> Result<bool> {
-    Ok(conn
-        .query_row(
-            "SELECT name FROM tasks WHERE name == ?",
-            (name,),
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
+
+fn parse_task(r: &Row) -> Result<Task, Error> {
+    Ok(match r.get::<_, String>(0)?.as_str() {
+        "now" => Task::Now {
+            name: r.get(1)?,
+            file_name: r.get(2)?,
+        },
+        "scheduled" => Task::Scheduled {
+            name: r.get(1)?,
+            file_name: r.get(2)?,
+            time: r.get(3)?,
+        },
+        "recurring" => Task::Recurring {
+            name: r.get(1)?,
+            file_name: r.get(2)?,
+            time: r
+                .get::<_, String>(3)?
+                .split(';')
+                .map(|s| {
+                    NaiveTime::parse_from_str(s, TIMEFMT).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            3,
+                            rusqlite::types::Type::Text,
+                            Box::new(e),
+                        )
+                    })
+                })
+                .collect::<Result<Vec<NaiveTime>>>()?,
+        },
+        _ => unreachable!(),
+    })
 }

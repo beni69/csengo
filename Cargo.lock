@@ -337,6 +337,7 @@ dependencies = [
  "base64 0.13.1",
  "bytes",
  "chrono",
+ "futures-util",
  "log",
  "mail-send",
  "pretty_env_logger",
