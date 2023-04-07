@@ -86,8 +86,11 @@ impl Player {
         self.cancel_map.lock().await.insert(key, tx);
         rx
     }
+    pub async fn delete_cancel(&self, key: &str) -> Option<oneshot::Sender<()>> {
+        self.cancel_map.lock().await.remove(key)
+    }
     pub async fn cancel(&self, key: &str) -> bool {
-        match self.cancel_map.lock().await.remove(key) {
+        match self.delete_cancel(key).await {
             Some(tx) => tx.send(()).is_ok(),
             None => false,
         }

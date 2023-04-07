@@ -40,8 +40,12 @@ pub(crate) fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
                     // successful play
                     mail::task_done(&file_name, &time).await;
                 }
+
                 if let Err(e) = player.db_name(db::delete_task, &name).await {
                     error!("{name}: failed to delete task after scheduled play\n{e:#?}");
+                };
+                if player.delete_cancel(&name).await.is_none() {
+                    error!("{name}: failed to delete cancel channel");
                 };
             });
         }
