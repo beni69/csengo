@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use mail_send::{mail_builder::MessageBuilder, Transport};
+use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use std::env::var;
 
 pub(crate) async fn task_done(file_name: &str, time: &DateTime<Utc>) {
@@ -9,16 +9,30 @@ pub(crate) async fn task_done(file_name: &str, time: &DateTime<Utc>) {
     };
     let addr = addr.as_str();
 
-    let body = format!(
+    let html_body = format!(
         r#"
-Tisztelt Tanár úr! <br/>
-<br/>
+<p>Tisztelt Tanár úr!</p>
+
+<p>
 Sikeresen lement a következő adás: <br/>
 Név: <b>{}</b> <br/>
-Időpont: <b>{}</b> <br/>
-<br/>
-Varga Benedek
-        "#,
+Időpont: <b>{}</b>
+</p>
+
+<p>Varga Benedek</p>"#,
+        file_name,
+        time.naive_local()
+    );
+
+    let text_body = format!(
+        r#"
+Tisztelt Tanár úr!
+
+Sikeresen lement a következő adás:
+Név: {}
+Időpont: {}
+
+Varga Benedek"#,
         file_name,
         time.naive_local()
     );
@@ -28,11 +42,13 @@ Varga Benedek
         .to(addr)
         .reply_to(addr)
         .subject(format!("Adás: {}", file_name))
-        .html_body(body.trim());
+        .html_body(html_body.trim())
+        .text_body(text_body.trim());
 
-    let mut transport = match Transport::new("smtp.gmail.com")
-        .credentials(addr, pass.as_str())
-        .connect_tls()
+    let mut transport = match SmtpClientBuilder::new("smtp.gmail.com", 465)
+        .implicit_tls(true)
+        .credentials((addr, pass.as_str()))
+        .connect()
         .await
     {
         Ok(t) => t,

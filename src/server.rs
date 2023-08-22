@@ -4,6 +4,7 @@ use crate::{
     scheduler::schedule,
     File, Task,
 };
+use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
 use bytes::Bytes;
 use chrono::Utc;
 use rust_embed::RustEmbed;
@@ -169,7 +170,10 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
     if req.task.is_now() {
         // a special case for one-off upload instant plays: don't save the file, just play it
         if let Some(file) = req.file {
-            let file = base64::decode(file).expect("invalid base64").into();
+            let file = BASE64_STANDARD_NO_PAD
+                .decode(file)
+                .expect("invalid base64")
+                .into();
 
             info!("queued {name}: {fname}");
             if let Err(e) = player.play_buf(file, fname) {
@@ -193,7 +197,10 @@ async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
 
     // save attached file (if any)
     if let Some(file) = req.file {
-        let file = base64::decode(file).expect("invalid base64").into();
+        let file = BASE64_STANDARD_NO_PAD
+            .decode(file)
+            .expect("invalid base64")
+            .into();
         if let Err(e) = db::insert_file(
             &*player.conn.lock().await,
             File {
