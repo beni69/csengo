@@ -1,5 +1,5 @@
 use crate::{db, mail, player::Player, Task};
-use chrono::Utc;
+use chrono::Local;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use std::sync::Arc;
 use tokio::{
@@ -7,10 +7,12 @@ use tokio::{
     time::{interval_at, Duration, Instant, MissedTickBehavior},
 };
 
-// !TODO: interpret db timestamps as local time, but api requests as utc and convert before storing in db
-
-pub fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
+pub async fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
     match task {
+        Task::Now { file_name, .. } => {
+            player.play_file(&file_name).await?;
+        }
+
         Task::Scheduled {
             name,
             file_name,
@@ -18,10 +20,10 @@ pub fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
         } => {
             // return if the date was in the past
             // there has to be a better way to do this
-            (time - Utc::now()).to_std()?;
+            (time - Local::now()).to_std()?;
 
             tokio::task::spawn(async move {
-                let diff = (time - Utc::now()).to_std().unwrap();
+                let diff = (time - Local::now()).to_std().unwrap();
                 debug!("{}: waiting {}s", name, diff.as_secs());
 
                 let rx = player.create_cancel(name.to_owned()).await;
@@ -57,13 +59,13 @@ pub fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
         } => {
             let mut intervals = Vec::with_capacity(times.len());
             for time in times {
-                let (diff, tmrw): (Duration, bool) = match (time - Utc::now().time()).to_std() {
+                let (diff, tmrw): (Duration, bool) = match (time - Local::now().time()).to_std() {
                     Ok(d) => (d, false),
                     Err(_) => (
-                        ((Utc::now() + chrono::Duration::days(1))
+                        ((Local::now() + chrono::Duration::days(1))
                             .date_naive()
                             .and_time(time)
-                            - Utc::now().naive_utc())
+                            - Local::now().naive_utc())
                         .to_std()?,
                         true,
                     ),
@@ -104,8 +106,6 @@ pub fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
                 }
             });
         }
-
-        _ => unreachable!("impossible to schedule a `Now`"),
     }
     Ok(())
 }

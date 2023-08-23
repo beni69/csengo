@@ -1,3 +1,9 @@
+header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
 main {
     display: flex;
     flex-wrap: wrap;
@@ -7,6 +13,14 @@ main {
 }
 section {
     min-width: calc(50% - 1rem);
+}
+
+form#task {
+    margin-bottom: 0;
+}
+#btn-stop {
+    color: var(--del-color);
+    border-color: var(--del-color);
 }
 
 .list {

@@ -8,6 +8,7 @@ edition = "2021"
 anyhow = "1.0.75"
 askama = { version = "0.12.0", features = ["with-axum"] }
 askama_axum = "0.3.0"
+async-stream = "0.3.5"
 axum = { version = "0.6.20", features = ["multipart"] }
 bytes = { version = "1.4.0", features = ["serde"] } # for json
 chrono = { version = "0.4.26", features = ["serde"] }
@@ -20,7 +21,7 @@ rodio = { version = "0.17.1", default-features = false, features = [
     "symphonia-all"
 ] }
 rusqlite = { version = "0.29.0", features = ["bundled", "chrono"] }
-rust-embed = "6.8.1"
+rust-embed = "8.0.0"
 serde = { version = "1.0.185", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["rt", "macros"] }
 

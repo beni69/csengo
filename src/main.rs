@@ -2,15 +2,14 @@ mod db;
 mod mail;
 mod player;
 mod scheduler;
-// mod server;
-mod server_axum;
+mod server;
 mod sink;
 mod templates;
 
 #[macro_use]
 extern crate log;
 use bytes::Bytes;
-use chrono::{DateTime, NaiveTime, SecondsFormat, Utc};
+use chrono::{DateTime, Local, NaiveTime, SecondsFormat};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -41,9 +40,7 @@ async fn main() -> anyhow::Result<()> {
     mail::get_vars();
 
     // web server setup
-    server_axum::init(player.clone()).await
-
-    // server::init(player).await
+    server::init(player).await
 }
 
 // === data structures ===
@@ -58,7 +55,7 @@ pub enum Task {
     Scheduled {
         name: String,
         file_name: String,
-        time: DateTime<Utc>,
+        time: DateTime<Local>,
     },
     Recurring {
         name: String,

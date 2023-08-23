@@ -1,5 +1,5 @@
 use crate::{player::Player, scheduler::schedule, File, Task};
-use chrono::NaiveTime;
+use chrono::{Local, NaiveTime};
 use rusqlite::{params, Connection, Error, Result, Row};
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
@@ -38,7 +38,16 @@ pub async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
     let mut len = tasks.len();
     for task in tasks {
         let name = task.get_name().to_owned();
-        if let Err(e) = schedule(task, player.clone()) {
+
+        if let Task::Scheduled { time, .. } = &task {
+            if *time < Local::now() {
+                warn!("{name}: Scheduled task missed, deleting it");
+                delete_task(conn, &name)?;
+                continue;
+            }
+        }
+
+        if let Err(e) = schedule(task, player.clone()).await {
             len -= 1;
             warn!("{name} failed to schedule: {e}");
         }
@@ -122,4 +131,17 @@ fn parse_task(r: &Row) -> Result<Task, Error> {
         },
         _ => unreachable!(),
     })
+}
+
+pub fn db_err(e: rusqlite::Error) -> anyhow::Error {
+    match e {
+        rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error {
+                code: rusqlite::ErrorCode::ConstraintViolation,
+                ..
+            },
+            _,
+        ) => anyhow::anyhow!("Name already in use"),
+        _ => anyhow::anyhow!("Unknown database error: e"),
+    }
 }

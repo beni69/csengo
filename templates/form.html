@@ -1,10 +1,15 @@
-<form id="task" hx-post="/htmx/task">
-    <input type="text" placeholder="Név" />
+<form id="task" hx-post="/htmx/task" hx-target="#tasks" hx-swap="outerHTML">
+    <label>
+        Név:
+        <input type="text" id="name" name="name" />
+    </label>
 
     {% include "filepicker.html" %}
 
     {% include "datepicker.html" %}
 
     <input type="submit" value="Go" class="btn go" />
+
 </form>
+<button id="btn-stop" class="outline" hx-post="/api/stop">STOP</button>
 {# vim: set ft=htmldjango: #}

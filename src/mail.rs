@@ -1,8 +1,8 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Local};
 use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use std::env::var;
 
-pub async fn task_done(file_name: &str, time: &DateTime<Utc>) {
+pub async fn task_done(file_name: &str, time: &DateTime<Local>) {
     let (addr, pass) = match get_vars() {
         Some(x) => x,
         None => return,

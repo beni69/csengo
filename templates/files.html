@@ -1,9 +1,9 @@
 {% if files.len() == 0 %}
-<div id="files" hx-swap-oob="true" class="empty">
+<div id="files" class="empty">
     Üres...
 </div>
 {% else %}
-<div id="files" hx-swap-oob="true" class="list">
+<div id="files" class="list" hx-confirm="Biztosan törlöd?" hx-target="#files" hx-swap="outerHTML">
     {% for file in files %}
     <div class="item">
         <div class="top-row">

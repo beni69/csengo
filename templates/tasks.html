@@ -1,12 +1,20 @@
-{% for task in tasks %}
-<div class="item">
-    <div class="top-row">
-        <p>{{ task.get_name() }}</p>
-        <button class="delete">X</button>
-    </div>
-    <p>
-    todo
-    </p>
+{% if tasks.len() == 0 %}
+<div id="tasks" class="empty">
+    Üres...
 </div>
-{% endfor %}
+{% else %}
+<div id="tasks" class="list" hx-confirm="Biztosan törlöd?" hx-target="#tasks" hx-swap="outerHTML">
+    {% for task in tasks %}
+    <div class="item">
+        <div class="top-row">
+            <p>{{ task.get_name() }}</p>
+            <button class="delete" hx-delete="/htmx/task/{{ task.get_name() }}">X</button>
+        </div>
+        {% if task.get_type() != "now" %}
+        <p>{{ task.time_to_str().unwrap().replace(";", ", ") }}</p>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 {# vim: set ft=htmldjango: #}

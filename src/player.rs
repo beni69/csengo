@@ -1,6 +1,6 @@
 use crate::{
     db,
-    server_axum::err_to_reply,
+    server::err_to_reply,
     sink::{Controller, Track},
     Task,
 };
@@ -63,6 +63,20 @@ impl Player {
         rx.borrow_and_update(); // to make sure to wait for the next value
         rx
     }
+    pub fn np_stream(&self) -> impl futures_util::Stream<Item = Option<NowPlaying>> {
+        fn inner(r: tokio::sync::watch::Ref<'_, Option<NowPlaying>>) -> Option<NowPlaying> {
+            r.to_owned()
+        }
+        let mut rx = self.np_realtime();
+        async_stream::stream! {
+            let data = inner(rx.borrow());
+            yield data;
+            while rx.changed().await.is_ok() {
+                let data = inner(rx.borrow());
+                yield data;
+            }
+        }
+    }
 
     pub fn playtest(&self) {
         // taken from https://docs.rs/rodio
@@ -93,10 +107,10 @@ impl Player {
     pub async fn delete_cancel(&self, key: &str) -> Option<oneshot::Sender<()>> {
         self.cancel_map.lock().await.remove(key)
     }
-    pub async fn cancel(&self, key: &str) -> bool {
+    pub async fn cancel(&self, key: &str) -> Result<()> {
         match self.delete_cancel(key).await {
-            Some(tx) => tx.send(()).is_ok(),
-            None => false,
+            Some(tx) => tx.send(()).map_err(|_| anyhow::anyhow!("Failed to cancel")),
+            None => Ok(()),
         }
     }
 
@@ -111,9 +125,9 @@ pub struct PlayerLock<'a> {
 }
 impl PlayerLock<'_> {
     pub fn list_tasks(&mut self) -> Result<Vec<Task>, Response> {
-        db::list_tasks(&*self.lock).map_err(|e| {
+        db::list_tasks(&self.lock).map_err(|e| {
             err_to_reply(
-                e,
+                e.into(),
                 "List tasks",
                 "Failed to get tasks",
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -121,9 +135,9 @@ impl PlayerLock<'_> {
         })
     }
     pub fn list_files(&mut self) -> Result<Vec<String>, Response> {
-        db::list_files(&*self.lock).map_err(|e| {
+        db::list_files(&self.lock).map_err(|e| {
             err_to_reply(
-                e,
+                e.into(),
                 "List files",
                 "Failed to get files",
                 StatusCode::INTERNAL_SERVER_ERROR,
