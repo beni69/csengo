@@ -1,0 +1,17 @@
+{% if files.len() == 0 %}
+<div id="files" hx-swap-oob="true" class="empty">
+    Üres...
+</div>
+{% else %}
+<div id="files" hx-swap-oob="true" class="list">
+    {% for file in files %}
+    <div class="item">
+        <div class="top-row">
+            <p>{{ file }}</p>
+            <button class="delete" hx-delete="/htmx/file/{{ file }}">X</button>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{# vim: set ft=htmldjango: #}

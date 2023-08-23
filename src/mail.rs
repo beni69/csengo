@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use std::env::var;
 
-pub(crate) async fn task_done(file_name: &str, time: &DateTime<Utc>) {
+pub async fn task_done(file_name: &str, time: &DateTime<Utc>) {
     let (addr, pass) = match get_vars() {
         Some(x) => x,
         None => return,
@@ -67,7 +67,7 @@ Varga Benedek"#,
     }
 }
 
-pub(crate) fn get_vars() -> Option<(String, String)> {
+pub fn get_vars() -> Option<(String, String)> {
     let addr = var("MAIL_ADDR");
     let pass = var("MAIL_PASS");
     if addr.is_err() || pass.is_err() {

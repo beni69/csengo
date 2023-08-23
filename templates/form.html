@@ -1,0 +1,10 @@
+<form id="task" hx-post="/htmx/task">
+    <input type="text" placeholder="Név" />
+
+    {% include "filepicker.html" %}
+
+    {% include "datepicker.html" %}
+
+    <input type="submit" value="Go" class="btn go" />
+</form>
+{# vim: set ft=htmldjango: #}

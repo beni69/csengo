@@ -13,80 +13,110 @@ use std::{env::var, net::IpAddr, sync::Arc};
 use warp::{hyper::StatusCode, reply::json, Filter};
 
 #[derive(RustEmbed)]
-#[folder = "frontend/dist"]
-struct Frontend;
+#[folder = "static"]
+pub struct Frontend;
 
-pub(crate) async fn init(p: Arc<Player>) -> ! {
-    let status = warp::path("status")
-        .and(warp::path::end())
-        .and(warp::get())
-        .map({
-            let p = p.clone();
-            move || p.clone()
-        })
-        .then(get_status);
+pub async fn init(p: Arc<Player>) -> ! {
+    let api = {
+        let status = warp::path("status")
+            .and(warp::path::end())
+            .and(warp::get())
+            .map({
+                let p = p.clone();
+                move || p.clone()
+            })
+            .then(get_status);
 
-    let realtime = warp::path("status")
-        .and(warp::path("realtime"))
-        .and(warp::path::end())
-        .and(warp::get())
-        .map({
-            let p = p.clone();
-            move || p.clone()
-        })
-        .then(get_realtime);
+        let realtime = warp::path("status")
+            .and(warp::path("realtime"))
+            .and(warp::path::end())
+            .and(warp::get())
+            .map({
+                let p = p.clone();
+                move || p.clone()
+            })
+            .then(get_realtime);
 
-    let post = warp::path::end()
-        .and(warp::post())
-        .and(warp::body::json())
-        .map({
-            let p = p.clone();
-            move |x| (x, p.clone())
-        })
-        .then(post_task);
+        let post = warp::path::end()
+            .and(warp::post())
+            .and(warp::body::json())
+            .map({
+                let p = p.clone();
+                move |x| (x, p.clone())
+            })
+            .then(post_task);
 
-    let delete = warp::path!("task" / String)
-        .and(warp::path::end())
-        .and(warp::delete())
-        .map({
-            let p = p.clone();
-            move |s| (s, p.clone())
-        })
-        .then(delete_task);
+        let delete = warp::path!("task" / String)
+            .and(warp::path::end())
+            .and(warp::delete())
+            .map({
+                let p = p.clone();
+                move |s| (s, p.clone())
+            })
+            .then(delete_task);
 
-    let stop = warp::path("stop")
-        .and(warp::path::end())
-        .and(warp::get().or(warp::post()))
-        .map({
-            let p = p.clone();
-            move |_| {
-                p.stop();
-                "OK"
-            }
-        });
+        let stop = warp::path("stop")
+            .and(warp::path::end())
+            .and(warp::get().or(warp::post()))
+            .map({
+                let p = p.clone();
+                move |_| {
+                    p.stop();
+                    "OK"
+                }
+            });
 
-    let playtest = warp::path("playtest")
-        .and(warp::path::end())
-        .and(warp::post())
-        .map({
-            let p = p.clone();
-            move || {
-                p.playtest();
-                "OK"
-            }
-        });
+        let playtest = warp::path("playtest")
+            .and(warp::path::end())
+            .and(warp::post())
+            .map({
+                let p = p.clone();
+                move || {
+                    p.playtest();
+                    "OK"
+                }
+            });
 
-    let api = warp::path("api").and(
-        status
-            .or(realtime)
-            .or(post)
-            .or(delete)
-            .or(stop)
-            .or(playtest),
-    );
+        let api = warp::path("api").and(
+            status
+                .or(realtime)
+                .or(post)
+                .or(delete)
+                .or(stop)
+                .or(playtest),
+        );
+        api
+    };
+
+    // let htmx = {
+    //     let status = warp::path("status")
+    //         .and(warp::path::end())
+    //         .and(warp::get())
+    //         .map({
+    //             let p = p.clone();
+    //             move || p.clone()
+    //         })
+    //         .then(tmpl::Status::run);
+    //
+    //     let htmx = warp::path("htmx").and(status);
+    //     htmx
+    // };
 
     let frontend = warp::get().and(warp_embed::embed(&Frontend));
-    let server = frontend.or(api).with(warp::log("server"));
+
+    // let index = warp::get()
+    //     .and(warp::path::end())
+    //     .map({
+    //         let p = p.clone();
+    //         move || p.clone()
+    //     })
+    //     .then(tmpl::Index::run);
+
+    let server = frontend
+        // .or(index)
+        .or(api)
+        // .or(htmx)
+        .with(warp::log("server"));
 
     #[cfg(debug_assertions)]
     let server = server.with(warp::cors().allow_any_origin());
@@ -287,7 +317,7 @@ async fn delete_task((name, player): (String, Arc<Player>)) -> Box<dyn warp::Rep
     }
 }
 
-fn err_to_reply(
+pub fn err_to_reply(
     e: impl std::error::Error,
     name: &str,
     msg: &'static str,

@@ -1,8 +1,11 @@
 use crate::{
     db,
+    server_axum::err_to_reply,
     sink::{Controller, Track},
+    Task,
 };
 use anyhow::Result;
+use axum::{http::StatusCode, response::Response};
 use bytes::Bytes;
 use rodio::{source::SineWave, Decoder, Source};
 use rusqlite::Connection;
@@ -11,6 +14,7 @@ use std::{collections::HashMap, io::Cursor, sync::Arc, time::Duration};
 use tokio::sync::{
     oneshot,
     watch::{Receiver, Ref},
+    MutexGuard,
 };
 
 pub struct Player {
@@ -94,6 +98,37 @@ impl Player {
             Some(tx) => tx.send(()).is_ok(),
             None => false,
         }
+    }
+
+    pub async fn lock(&self) -> PlayerLock {
+        let lock = self.conn.lock().await;
+        PlayerLock { lock }
+    }
+}
+
+pub struct PlayerLock<'a> {
+    pub lock: MutexGuard<'a, Connection>,
+}
+impl PlayerLock<'_> {
+    pub fn list_tasks(&mut self) -> Result<Vec<Task>, Response> {
+        db::list_tasks(&*self.lock).map_err(|e| {
+            err_to_reply(
+                e,
+                "List tasks",
+                "Failed to get tasks",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
+    }
+    pub fn list_files(&mut self) -> Result<Vec<String>, Response> {
+        db::list_files(&*self.lock).map_err(|e| {
+            err_to_reply(
+                e,
+                "List files",
+                "Failed to get files",
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })
     }
 }
 

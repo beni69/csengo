@@ -2,8 +2,10 @@ mod db;
 mod mail;
 mod player;
 mod scheduler;
-mod server;
+// mod server;
+mod server_axum;
 mod sink;
+mod templates;
 
 #[macro_use]
 extern crate log;
@@ -39,14 +41,16 @@ async fn main() -> anyhow::Result<()> {
     mail::get_vars();
 
     // web server setup
-    server::init(player).await
+    server_axum::init(player.clone()).await
+
+    // server::init(player).await
 }
 
 // === data structures ===
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
-enum Task {
+pub enum Task {
     Now {
         name: String,
         file_name: String,
@@ -155,7 +159,7 @@ impl Task {
 }
 
 #[derive(Debug)]
-struct File {
+pub struct File {
     name: String,
     data: Bytes,
 }

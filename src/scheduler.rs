@@ -9,7 +9,7 @@ use tokio::{
 
 // !TODO: interpret db timestamps as local time, but api requests as utc and convert before storing in db
 
-pub(crate) fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
+pub fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
     match task {
         Task::Scheduled {
             name,

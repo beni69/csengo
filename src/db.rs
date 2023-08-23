@@ -4,14 +4,14 @@ use rusqlite::{params, Connection, Error, Result, Row};
 use std::{path::Path, sync::Arc};
 use tokio::sync::Mutex;
 
-pub(crate) type Db = Arc<Mutex<Connection>>;
+pub type Db = Arc<Mutex<Connection>>;
 
 const DB_FILE: &str = "./csengo.db";
 
 // the format of recurring times in the db
-pub(crate) static TIMEFMT: &str = "%H:%M";
+pub static TIMEFMT: &str = "%H:%M";
 
-pub(crate) fn init() -> Result<(Connection, bool)> {
+pub fn init() -> Result<(Connection, bool)> {
     let db_new = !Path::new(DB_FILE).try_exists().unwrap_or(false);
     let conn = Connection::open(DB_FILE)?;
     if db_new {
@@ -32,7 +32,7 @@ pub(crate) fn init() -> Result<(Connection, bool)> {
     info!("db init successful");
     Ok((conn, db_new))
 }
-pub(crate) async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
+pub async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
     let conn = &*player.conn.lock().await;
     let tasks = list_tasks(conn)?;
     let mut len = tasks.len();
@@ -46,19 +46,19 @@ pub(crate) async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
     Ok(len)
 }
 
-pub(crate) fn insert_file(conn: &Connection, file: File) -> Result<()> {
+pub fn insert_file(conn: &Connection, file: File) -> Result<()> {
     conn.execute(
         "INSERT INTO files (name, data) VALUES (?1, ?2)",
         params![file.name, file.data.to_vec()],
     )
     .map(|_| ())
 }
-pub(crate) fn list_files(conn: &Connection) -> Result<Vec<String>> {
+pub fn list_files(conn: &Connection) -> Result<Vec<String>> {
     let mut s = conn.prepare("SELECT name FROM files")?;
     let res = s.query_map([], |r| r.get(0))?;
     res.collect()
 }
-pub(crate) fn get_file(conn: &Connection, name: &str) -> Result<File> {
+pub fn get_file(conn: &Connection, name: &str) -> Result<File> {
     conn.query_row("SELECT * FROM files WHERE name == ?", (name,), |r| {
         Ok(File {
             name: r.get(0)?,
@@ -66,8 +66,12 @@ pub(crate) fn get_file(conn: &Connection, name: &str) -> Result<File> {
         })
     })
 }
+pub fn delete_file(conn: &Connection, name: &str) -> Result<()> {
+    conn.execute("DELETE FROM files WHERE name == ?", (name,))
+        .map(|_| ())
+}
 
-pub(crate) fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
+pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     conn.execute(
         "INSERT INTO tasks (type, name, file_name, time) VALUES (?1, ?2, ?3, ?4)",
         params![
@@ -79,12 +83,12 @@ pub(crate) fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     )
     .map(|_| ())
 }
-pub(crate) fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
+pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let mut s = conn.prepare("SELECT * FROM tasks")?;
     let res = s.query_map([], parse_task)?;
     res.collect()
 }
-pub(crate) fn delete_task(conn: &Connection, name: &str) -> Result<bool> {
+pub fn delete_task(conn: &Connection, name: &str) -> Result<bool> {
     Ok(conn.execute("DELETE FROM tasks WHERE name == ?", (name,))? == 1)
 }
 

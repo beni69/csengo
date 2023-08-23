@@ -1,0 +1,12 @@
+{% for task in tasks %}
+<div class="item">
+    <div class="top-row">
+        <p>{{ task.get_name() }}</p>
+        <button class="delete">X</button>
+    </div>
+    <p>
+    todo
+    </p>
+</div>
+{% endfor %}
+{# vim: set ft=htmldjango: #}

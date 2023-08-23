@@ -1,0 +1,11 @@
+<label id="filepicker" hx-swap-oob="true">
+    File:
+    <select
+        name="file_name"
+        id="file_name">
+        {% for file in files %}
+        <option value="{{ file }}">{{ file }}</option>
+        {% endfor %}
+    </select>
+</label>
+{# vim: set ft=htmldjango: #}

@@ -1,0 +1,19 @@
+<label id="datepicker" hx-swap-oob="true">
+    Mikor?
+    <select name="type" id="time" hx-get="/htmx/datepicker" hx-swap="none">
+        <option value="now" {% if time.is_now() %}selected{% endif %}>Most</option>
+        <option value="scheduled" {% if time.is_scheduled() %}selected{% endif %}>Időzítve, egyszer</option>
+        <option value="recurring" {% if time.is_recurring() %}selected{% endif %}>Időzítve, ismétlődően</option>
+    </select>
+
+    {% match time %}
+    {% when Time::Now %}
+    {% when Time::Scheduled with (time) %}
+    <input type="datetime-local" id="time" name="time" value="{{ time }}" />
+    {% when Time::Recurring with (times) %}
+    {% for time in times %}
+    <input type="datetime-local" id="time-{{ loop.index0 }}" name="time-{{ loop.index0 }}" value="{{ time }}" />
+    {% endfor %}
+    {% endmatch %}
+</label>
+{# vim: set ft=htmldjango: #}
