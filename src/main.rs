@@ -13,7 +13,7 @@ use chrono::{DateTime, Local, NaiveTime, SecondsFormat};
 use serde::{Deserialize, Serialize};
 use std::env;
 
-const GIT_REF: &str = include_str!("../.git/refs/heads/main");
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -22,7 +22,8 @@ async fn main() -> anyhow::Result<()> {
     }
     pretty_env_logger::init();
 
-    info!("csengo v{} - starting...", &GIT_REF[0..7]);
+    info!("csengo starting...");
+    info!("version {}", GIT_REF);
 
     // db setup
     let (conn, db_new) = db::init()?;

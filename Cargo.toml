@@ -25,6 +25,9 @@ rust-embed = "8.0.0"
 serde = { version = "1.0.185", features = ["derive"] }
 tokio = { version = "1.32.0", features = ["rt", "macros"] }
 
+[build-dependencies]
+const-gen = { version = "1.4.1", default-features = false, features = ["std"] }
+
 [profile.release]
 strip = true
 lto = true
