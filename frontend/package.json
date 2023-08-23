@@ -1,10 +1,11 @@
 {
   "name": "csengo-frontend",
   "scripts": {
-    "build": "esbuild bundle.js --bundle --minify --outdir=../static"
+    "build": "esbuild bundle.js --bundle --minify --platform=browser --outdir=../static"
   },
   "dependencies": {
     "@picocss/pico": "^1.5.10",
+    "dayjs": "^1.11.9",
     "htmx.org": "^1.9.4"
   },
   "devDependencies": {

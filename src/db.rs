@@ -97,6 +97,9 @@ pub fn list_tasks(conn: &Connection) -> Result<Vec<Task>> {
     let res = s.query_map([], parse_task)?;
     res.collect()
 }
+pub fn get_task(conn: &Connection, name: &str) -> Result<Task> {
+    conn.query_row("SELECT * FROM tasks WHERE name == ?", (name,), parse_task)
+}
 pub fn delete_task(conn: &Connection, name: &str) -> Result<bool> {
     Ok(conn.execute("DELETE FROM tasks WHERE name == ?", (name,))? == 1)
 }

@@ -8,7 +8,10 @@
     <div class="item">
         <div class="top-row">
             <p>{{ file }}</p>
-            <button class="delete" hx-delete="/htmx/file/{{ file }}">X</button>
+            <div class="btns">
+                <button class="delete" hx-delete="/htmx/file/{{ file }}">&Cross;</button>
+                <a class="download" href="/api/file/{{ file }}" download="{{ file }}">⬇️</a>
+            </div>
         </div>
     </div>
     {% endfor %}

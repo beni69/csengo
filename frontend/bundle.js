@@ -1,6 +1,8 @@
-import "htmx.org";
-import "htmx.org/dist/ext/sse";
+const htmx = require("htmx.org");
+globalThis.htmx = htmx; // xd
+require("htmx.org/dist/ext/sse");
 
-import "@picocss/pico";
+require("@picocss/pico");
+require("./style.css");
 
-import "./style.css";
+require("./main.js");

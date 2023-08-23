@@ -19,7 +19,7 @@ fn main() {
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("const_gen.rs");
-    write(&dest_path, code).unwrap();
+    write(dest_path, code).unwrap();
 
     //build fontend
     //

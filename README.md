@@ -13,8 +13,10 @@ maga a fő program, [rust](https://rust-lang.org)-ban készült, ez felel a
 lejátszásért, és egy web szervert is futtat, amivel elérhető lesz a webes admin
 felület, illetve az API, amivel irányítani lehet.
 
-a webes felület kódja a [frontend](frontend) mappában található, egy single-page
-[svelte](https://svelte.dev) app. ebből egy-egy html, css, és js fájl készül,
+a webes felületet a szerver generálja a [templates](templates) mappában lévő minták alapján.
+a weboldal [htmx](https://htmx.org) segítségével kommunikál a szerverrel.
+a [frontend](frontend) mappában lévő kis kódrészek alapján egy js és egy css
+fálj készül minden kóddal, ami a frontend-re kell,
 amik statikusan a csengőprogram végső executable fileba lesznek bemásolva.
 
 avagy maga a program egyetlen egy file, kizárólag ezt kell átmásolni a
@@ -38,8 +40,7 @@ kelleni:
 
 ## todo
 
-- [ ] localize dates in the db (óraátállítás fix)
-- [ ] disable and/or import/export tasks
+- [ ] task import
+- [ ] relative duration format for tasks (maybe roll a custom localized impl on the server?)
 - [ ] now playing duration and timestamp
 - [ ] use [systemd credentials](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials) instead of an env file
-- [ ] maybe possibly look into *NOT* base64 encoding the file contents (multipart form?)
