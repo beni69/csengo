@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+        <script src="/static/bundle.js"></script>
+        <link rel="stylesheet" href="/static/bundle.css">
+
+        <script defer>
+            document.addEventListener("htmx:sendError", e => {
+                alert("Failed to connect to server");
+                console.error(e);
+            });
+            document.addEventListener("htmx:responseError", e => {
+                alert(`${e.detail.xhr.statusText}: ${e.detail.xhr.response}`);
+                console.error(e);
+            });
+
+            htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
+                htmx.find("#fileupload #progress").setAttribute("value", e.detail.loaded / e.detail.total * 100)
+            });
+        </script>
+
+        <title>Csengő Admin</title>
+    </head>
+    <body>
+        <header>
+            <h1 id="title" class="flow">Csengő Admin</h1>
+
+            {% include "status.html" %}
+        </header>
+        <main class="container">
+            <section id="task-form">
+                <h2>Új csengetés</h2>
+                {% include "form.html" %}
+            </section>
+
+            <section>
+                <h2>Következő csengetések</h2>
+                <div id="export"><a href="/api/export" download="csengo.json">Export</a></div>
+                {% include "tasks.html" %}
+            </section>
+
+            <section>
+                <h2>Új fájl</h2>
+                <form id="fileupload" hx-encoding="multipart/form-data" hx-post="/htmx/file" hx-target="#files" hx-swap="outerHTML">
+                    <input type="file" name="file">
+                    <button>
+                        Upload
+                    </button>
+                    <progress id="progress" value="0" max="100"></progress>
+                </form>
+            </section>
+
+            <section>
+                <h2>Fájlok</h2>
+                {% include "files.html" %}
+            </section>
+        </main>
+    </body>
+</html>
+{# vim: set ft=htmldjango: #}

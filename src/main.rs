@@ -4,15 +4,16 @@ mod player;
 mod scheduler;
 mod server;
 mod sink;
+mod templates;
 
 #[macro_use]
 extern crate log;
 use bytes::Bytes;
-use chrono::{DateTime, NaiveTime, SecondsFormat, Utc};
+use chrono::{DateTime, Local, NaiveTime, SecondsFormat};
 use serde::{Deserialize, Serialize};
 use std::env;
 
-const GIT_REF: &str = include_str!("../.git/refs/heads/main");
+include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -21,7 +22,8 @@ async fn main() -> anyhow::Result<()> {
     }
     pretty_env_logger::init();
 
-    info!("csengo v{} - starting...", &GIT_REF[0..7]);
+    info!("csengo starting...");
+    info!("version {}", GIT_REF);
 
     // db setup
     let (conn, db_new) = db::init()?;
@@ -46,7 +48,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
-enum Task {
+pub enum Task {
     Now {
         name: String,
         file_name: String,
@@ -54,7 +56,7 @@ enum Task {
     Scheduled {
         name: String,
         file_name: String,
-        time: DateTime<Utc>,
+        time: DateTime<Local>,
     },
     Recurring {
         name: String,
@@ -155,7 +157,7 @@ impl Task {
 }
 
 #[derive(Debug)]
-struct File {
+pub struct File {
     name: String,
     data: Bytes,
 }

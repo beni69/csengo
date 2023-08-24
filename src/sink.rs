@@ -168,7 +168,7 @@ struct Controls {
 }
 
 pub struct Track {
-    pub(crate) name: Option<String>,
-    pub(crate) signal: Option<oneshot::Sender<()>>,
-    pub(crate) src: Box<dyn Source<Item = f32> + Send + Sync>,
+    pub name: Option<String>,
+    pub signal: Option<oneshot::Sender<()>>,
+    pub src: Box<dyn Source<Item = f32> + Send + Sync>,
 }

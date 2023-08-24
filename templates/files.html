@@ -1,0 +1,20 @@
+{% if files.len() == 0 %}
+<div id="files" class="empty">
+    Üres...
+</div>
+{% else %}
+<div id="files" class="list" hx-confirm="Biztosan törlöd?" hx-target="#files" hx-swap="outerHTML">
+    {% for file in files %}
+    <div class="item">
+        <div class="top-row">
+            <p>{{ file }}</p>
+            <div class="btns">
+                <button class="delete" hx-delete="/htmx/file/{{ file }}">&Cross;</button>
+                <a class="download" href="/api/file/{{ file }}" download="{{ file }}">⬇️</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{# vim: set ft=htmldjango: #}

@@ -1,0 +1,119 @@
+header {
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    padding: 0 !important;
+}
+
+#title {
+    display: inline;
+    text-align: center;
+    margin: 1em 0;
+}
+
+main {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    justify-content: center;
+    gap: 2rem;
+}
+section {
+    min-width: calc(50% - 1rem);
+}
+
+form#task {
+    margin-bottom: 0;
+}
+#btn-stop {
+    color: var(--del-color);
+    border-color: var(--del-color);
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+
+    border: var(--border-width) solid var(--form-element-border-color);
+    border-radius: var(--border-radius);
+}
+
+.item {
+    padding: 1rem;
+}
+/* "divider line" */
+.item:not(:first-child) {
+    border-top: var(--border-width) solid var(--form-element-border-color);
+    border-radius: 0;
+}
+.item p {
+    margin: 0;
+    height: 100%;
+    max-width: 25em;
+}
+
+.item .top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.item .top-row .btns {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.delete {
+    color: var(--del-color);
+    background: none;
+    border: none;
+    max-width: fit-content;
+    max-height: fit-content;
+    font-size: 1.5em;
+
+    margin: 0;
+    padding: 0.2rem;
+    transition: 0.1s linear text-shadow;
+}
+.delete:is(:hover, :active, :focus) {
+    text-shadow: 0 0 3px var(--del-color);
+}
+.download, .download:visited {
+    text-decoration: none;
+    transition: 0.1s linear text-shadow;
+}
+.download:is(:hover, :active, :focus) {
+    text-shadow: 0 0 3px white;
+}
+
+.empty {
+    color: grey;
+}
+
+#export {
+    text-align: right;
+    display: block;
+    width: 100%;
+}
+
+.flow {
+    background-position: 0%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    color: transparent;
+
+    background-image: linear-gradient(to right, var(--h1-color), var(--primary-hover), var(--h1-color), var(--primary-hover));
+    background-size: 300%;
+    animation: flow 5s linear infinite;
+}
+@keyframes flow {
+    from {
+        background-position: left;
+    }
+    to {
+        background-position: right;
+    }
+}

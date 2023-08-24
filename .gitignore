@@ -1,5 +1,9 @@
+/frontend/node_modules
 /target
-/tmp
+
+/static/bundle.js
+/static/bundle.css
+
 *.mp3
 *.db
 /*env*

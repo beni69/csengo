@@ -1,0 +1,22 @@
+<div id="datepicker" hx-swap-oob="true" hx-include="select#time, #datepicker input[type=datetime-local], #recurring-n" hx-swap="none">
+    <label>
+        Mikor?
+        <select name="type" id="time" hx-get="/htmx/datepicker">
+            <option value="now" {% if time.is_now() %}selected{% endif %}>Most</option>
+            <option value="scheduled" {% if time.is_scheduled() %}selected{% endif %}>Időzítve, egyszer</option>
+            <option value="recurring" {% if time.is_recurring() %}selected{% endif %}>Időzítve, ismétlődően</option>
+        </select>
+    </label>
+
+    {% match time %}
+    {% when Time::Now %}
+    {% when Time::Scheduled with (time) %}
+    <input type="datetime-local" id="time" name="time" value="{{ time|datefmt }}" />
+    {% when Time::Recurring with (times) %}
+    <label>Hányszor? <input type="number" name="recurring-n" id="recurring-n" min="1" value="{{ times.len() }}" hx-get="/htmx/datepicker" /></label>
+    {% for time in times %}
+    <label><input type="datetime-local" id="time-{{ loop.index0 }}" name="time-{{ loop.index0 }}" value="{{ time|datefmt }}" /></label>
+    {% endfor %}
+    {% endmatch %}
+</div>
+{# vim: set ft=htmldjango: #}

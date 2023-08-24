@@ -1,298 +1,134 @@
-use crate::{
-    db,
-    player::{NowPlaying, Player},
-    scheduler::schedule,
-    File, Task,
+use crate::{db, player::Player, scheduler::schedule, templates, Task};
+use axum::{
+    extract::{Path, State},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
+    routing::{any, delete, get, post},
+    Json, Router,
 };
-use base64::{prelude::BASE64_STANDARD_NO_PAD, Engine};
-use bytes::Bytes;
-use chrono::Utc;
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
 use std::{env::var, net::IpAddr, sync::Arc};
-use warp::{hyper::StatusCode, reply::json, Filter};
+
+pub type AppState = State<Arc<Player>>;
 
 #[derive(RustEmbed)]
-#[folder = "frontend/dist"]
-struct Frontend;
+#[folder = "static"]
+pub struct Static;
 
-pub(crate) async fn init(p: Arc<Player>) -> ! {
-    let status = warp::path("status")
-        .and(warp::path::end())
-        .and(warp::get())
-        .map({
-            let p = p.clone();
-            move || p.clone()
-        })
-        .then(get_status);
+pub async fn init(p: Arc<Player>) -> ! {
+    let app = Router::new()
+        .route("/", get(templates::Index::get))
+        .route("/static/*path", get(static_handler))
+        .nest(
+            "/htmx",
+            Router::new()
+                .route("/status", get(templates::Status::get))
+                .route("/status/sse", get(templates::Status::sse))
+                .route("/status/realtime", get(templates::Status::realtime))
+                .route("/form", get(templates::TaskForm::get))
+                .route("/datepicker", get(templates::DatePicker::get))
+                .route("/task", get(templates::Tasks::get))
+                .route("/task", post(templates::Tasks::post))
+                .route("/task/:id", delete(templates::Tasks::delete))
+                .route("/file", get(templates::Files::get))
+                .route("/file", post(templates::Files::post))
+                .route("/file/:fname", delete(templates::Files::delete)),
+        )
+        .nest(
+            "/api",
+            Router::new()
+                .route("/stop", any(api_stop))
+                .route("/playtest", post(api_playtest))
+                .route("/export", get(api_export))
+                .route("/import", get(api_import))
+                .route("/file/:fname", get(api_download)),
+        )
+        .with_state(p);
 
-    let realtime = warp::path("status")
-        .and(warp::path("realtime"))
-        .and(warp::path::end())
-        .and(warp::get())
-        .map({
-            let p = p.clone();
-            move || p.clone()
-        })
-        .then(get_realtime);
-
-    let post = warp::path::end()
-        .and(warp::post())
-        .and(warp::body::json())
-        .map({
-            let p = p.clone();
-            move |x| (x, p.clone())
-        })
-        .then(post_task);
-
-    let delete = warp::path!("task" / String)
-        .and(warp::path::end())
-        .and(warp::delete())
-        .map({
-            let p = p.clone();
-            move |s| (s, p.clone())
-        })
-        .then(delete_task);
-
-    let stop = warp::path("stop")
-        .and(warp::path::end())
-        .and(warp::get().or(warp::post()))
-        .map({
-            let p = p.clone();
-            move |_| {
-                p.stop();
-                "OK"
-            }
-        });
-
-    let playtest = warp::path("playtest")
-        .and(warp::path::end())
-        .and(warp::post())
-        .map({
-            let p = p.clone();
-            move || {
-                p.playtest();
-                "OK"
-            }
-        });
-
-    let api = warp::path("api").and(
-        status
-            .or(realtime)
-            .or(post)
-            .or(delete)
-            .or(stop)
-            .or(playtest),
-    );
-
-    let frontend = warp::get().and(warp_embed::embed(&Frontend));
-    let server = frontend.or(api).with(warp::log("server"));
-
-    #[cfg(debug_assertions)]
-    let server = server.with(warp::cors().allow_any_origin());
-
-    warp::serve(server)
-        .run((
+    axum::Server::bind(
+        &(
             var("HOST")
                 .map(|s| s.parse::<IpAddr>().expect("invalid $HOST"))
                 .unwrap_or_else(|_| [0, 0, 0, 0].into()),
             var("PORT")
                 .map(|s| s.parse().expect("invalid $PORT"))
                 .unwrap_or(8080u16),
-        ))
-        .await;
+        )
+            .into(),
+    )
+    .serve(app.into_make_service())
+    .await
+    .unwrap();
 
     unreachable!()
 }
 
-async fn get_status(p: Arc<Player>) -> Box<dyn warp::Reply> {
-    let conn = &*p.conn.lock().await;
-    let tasks = match db::list_tasks(conn) {
-        Ok(x) => x,
-        Err(e) => {
-            return Box::new(err_to_reply(
-                e,
-                "list tasks",
-                "failed to get tasks",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ))
-        }
-    };
-    let files = match db::list_files(conn) {
-        Ok(x) => x,
-        Err(e) => {
-            return Box::new(err_to_reply(
-                e,
-                "list files",
-                "failed to get files",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ))
-        }
-    };
-    Box::new(json(&Status {
-        tasks,
-        files,
-        playing: &p.now_playing(),
-    }))
+async fn api_stop(State(p): AppState) -> StatusCode {
+    p.stop();
+    info!("STOP");
+    StatusCode::NO_CONTENT
+}
+async fn api_playtest(State(p): AppState) -> StatusCode {
+    p.playtest();
+    StatusCode::NO_CONTENT
 }
 
-async fn get_realtime(p: Arc<Player>) -> Box<dyn warp::Reply> {
-    let mut rx = p.np_realtime();
-    if let Err(e) = rx.changed().await {
-        return Box::new(err_to_reply(
-            e,
-            "rt_recv",
-            "failed to read realtime status",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ));
-    };
-    let np = rx.borrow();
-    Box::new(json(&*np))
+async fn api_export(State(p): AppState) -> Result<Json<Vec<Task>>, Response> {
+    let tasks = p.lock().await.list_tasks()?;
+    Ok(Json(tasks))
+}
+async fn api_import(
+    State(p): AppState,
+    Json(tasks): Json<Vec<Task>>,
+) -> Result<impl IntoResponse, Response> {
+    let lock = p.lock().await;
+    let len = tasks.len();
+    let mut n = 0;
+    for task in tasks {
+        if db::get_task(&lock.lock, task.get_name()).is_err() {
+            continue;
+        };
+
+        db::insert_task(&lock.lock, &task).unwrap();
+        schedule(task, p.clone())
+            .await
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()).into_response())?;
+        n += 1;
+    }
+    let msg = format!(
+        "Task import complete: {len} total, {n} new, {} skipped",
+        len - n
+    );
+    info!("{msg}");
+
+    Ok(msg)
+}
+async fn api_download(
+    State(p): AppState,
+    Path(fname): Path<String>,
+) -> Result<Response, StatusCode> {
+    let file = db::get_file(&p.lock().await.lock, &fname).map_err(|_| (StatusCode::NOT_FOUND))?;
+    let mime = mime_guess::from_path(&fname).first_or_octet_stream();
+    Ok(([(header::CONTENT_TYPE, mime.as_ref())], file.data).into_response())
 }
 
-#[derive(Debug, Serialize)]
-struct Status<'a> {
-    tasks: Vec<Task>,
-    files: Vec<String>,
-    playing: &'a Option<NowPlaying>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Post {
-    file: Option<Bytes>,
-    task: Task,
-}
-
-async fn post_task((req, player): (Post, Arc<Player>)) -> Box<dyn warp::Reply> {
-    let name = req.task.get_name();
-    let fname = req.task.get_file_name();
-
-    if req.task.is_now() {
-        // a special case for one-off upload instant plays: don't save the file, just play it
-        if let Some(file) = req.file {
-            let file = BASE64_STANDARD_NO_PAD
-                .decode(file)
-                .expect("invalid base64")
-                .into();
-
-            info!("queued {name}: {fname}");
-            if let Err(e) = player.play_buf(file, fname) {
-                error!("playing failed: {name}\n{e:#?}");
-                return Box::new(warp::reply::with_status(
-                    "failed to play file",
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                ));
-            }
-        } else if let Err(e) = player.play_file(fname).await {
-            // play it and handle the error
-            return Box::new(err_to_reply(
-                e.root_cause(),
-                name,
-                "playing failed",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
+async fn static_handler(Path(path): Path<String>) -> Response {
+    let path = path.replacen("static/", "", 1);
+    match Static::get(path.as_str()) {
+        Some(content) => {
+            let mime = mime_guess::from_path(path).first_or_octet_stream();
+            ([(header::CONTENT_TYPE, mime.as_ref())], content.data).into_response()
         }
-        return Box::new("OK");
-    }
-
-    // save attached file (if any)
-    if let Some(file) = req.file {
-        let file = BASE64_STANDARD_NO_PAD
-            .decode(file)
-            .expect("invalid base64")
-            .into();
-        if let Err(e) = db::insert_file(
-            &*player.conn.lock().await,
-            File {
-                name: fname.clone(),
-                data: file,
-            },
-        ) {
-            error!("failed to save file: {fname}\n{e:#?}");
-            return Box::new(err_to_reply(
-                e,
-                fname,
-                "failed to save file",
-                StatusCode::INSUFFICIENT_STORAGE,
-            ));
-        }
-    }
-
-    // check if scheduled task is in the future
-    if let Task::Scheduled {
-        name,
-        file_name: _,
-        time,
-    } = &req.task
-    {
-        if let Err(e) = (*time - Utc::now()).to_std() {
-            error!("{name}: invalid time: {e:#?}");
-            return Box::new(err_to_reply(
-                e,
-                name,
-                "invalid time",
-                StatusCode::BAD_REQUEST,
-            ));
-        }
-    }
-
-    // save task to db
-    if let Err(e) = db::insert_task(&*player.conn.lock().await, &req.task) {
-        error!("{name}: db insert failed\n{e:#?}");
-        return Box::new(err_to_reply(
-            e,
-            name,
-            "failed to save task",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ));
-    }
-
-    let name = name.to_owned();
-    if let Err(e) = schedule(req.task, player) {
-        error!("{name}: schedule failed\n{e:#?}");
-    }
-
-    Box::new("OK")
-}
-
-async fn delete_task((name, player): (String, Arc<Player>)) -> Box<dyn warp::Reply> {
-    match player.db_name(db::delete_task, &name).await {
-        Ok(v) => {
-            if v {
-                if !player.cancel(&name).await {
-                    error!("{name}: failed to issue cancel");
-                    return Box::new(warp::reply::with_status(
-                        "failed to issue cancel",
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    ));
-                }
-
-                Box::new("OK")
-            } else {
-                Box::new(warp::reply::with_status(
-                    "task not found",
-                    StatusCode::NOT_FOUND,
-                ))
-            }
-        }
-        Err(e) => {
-            error!("{name}: failed to delete task");
-            Box::new(err_to_reply(
-                e,
-                &name,
-                "msg",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ))
-        }
+        None => StatusCode::NOT_FOUND.into_response(),
     }
 }
 
-fn err_to_reply(
-    e: impl std::error::Error,
+pub fn err_to_reply(
+    e: anyhow::Error,
     name: &str,
     msg: &'static str,
     status: StatusCode,
-) -> warp::reply::WithStatus<&'static str> {
+) -> Response {
     error!("{name}: {msg}\n{e:#?}");
-    warp::reply::with_status(msg, status)
+    (status, msg).into_response()
 }
