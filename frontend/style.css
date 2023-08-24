@@ -21,7 +21,7 @@ main {
     gap: 2rem;
 }
 section {
-    min-width: calc(50% - 1rem);
+    width: 25rem;
 }
 
 form#task {
