@@ -1,7 +1,8 @@
 {
   "name": "csengo-frontend",
   "scripts": {
-    "build": "esbuild bundle.js --bundle --minify --platform=browser --outdir=../static"
+    "build": "esbuild bundle.js --bundle --minify --platform=browser --sourcemap --outdir=../static",
+    "watch": "watchexec 'pnpm build'"
   },
   "dependencies": {
     "@picocss/pico": "^1.5.10",

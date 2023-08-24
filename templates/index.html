@@ -1,26 +1,12 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="hu" data-theme="dark">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+        <link rel="icon" href="/static/favicon.ico">
         <script src="/static/bundle.js"></script>
         <link rel="stylesheet" href="/static/bundle.css">
-
-        <script defer>
-            document.addEventListener("htmx:sendError", e => {
-                alert("Failed to connect to server");
-                console.error(e);
-            });
-            document.addEventListener("htmx:responseError", e => {
-                alert(`${e.detail.xhr.statusText}: ${e.detail.xhr.response}`);
-                console.error(e);
-            });
-
-            htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
-                htmx.find("#fileupload #progress").setAttribute("value", e.detail.loaded / e.detail.total * 100)
-            });
-        </script>
 
         <title>Csengő Admin</title>
     </head>
@@ -30,7 +16,7 @@
 
             {% include "status.html" %}
         </header>
-        <main>
+        <main class="container">
             <section id="task-form">
                 <h2>Új csengetés</h2>
                 {% include "form.html" %}

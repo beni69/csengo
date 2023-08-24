@@ -21,7 +21,9 @@ main {
     gap: 2rem;
 }
 section {
-    width: 25rem;
+    max-width: 25rem;
+    min-width: calc(50% - 2rem); /* account for gap */
+    flex-grow: 1;
 }
 
 form#task {

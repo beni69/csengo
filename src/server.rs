@@ -1,6 +1,6 @@
 use crate::{db, player::Player, scheduler::schedule, templates, Task};
 use axum::{
-    extract::{Path, State},
+    extract::{DefaultBodyLimit, Path, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, delete, get, post},
@@ -31,7 +31,11 @@ pub async fn init(p: Arc<Player>) -> ! {
                 .route("/task", post(templates::Tasks::post))
                 .route("/task/:id", delete(templates::Tasks::delete))
                 .route("/file", get(templates::Files::get))
-                .route("/file", post(templates::Files::post))
+                .route(
+                    "/file",
+                    post(templates::Files::post)
+                        .layer(DefaultBodyLimit::max(1024usize.pow(2) * 100)), // 100M
+                )
                 .route("/file/:fname", delete(templates::Files::delete)),
         )
         .nest(

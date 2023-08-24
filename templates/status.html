@@ -1,5 +1,4 @@
-<div id="status" hx-ext="sse" sse-connect="/htmx/status/sse" sse-swap="message">
-<!-- <div id="status" hx-get="/htmx/status/realtime" hx-trigger="load, realtime from:body" hx-swap="outerHTML"> -->
+<div id="status">
     {% match np %}
     {%- when Some with (np) %}
     Most szól: {{ np.name }}

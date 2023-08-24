@@ -1,8 +1,8 @@
 /frontend/node_modules
 /target
 
-/static/bundle.js
-/static/bundle.css
+/static/bundle.js*
+/static/bundle.css*
 
 *.mp3
 *.db
