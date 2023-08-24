@@ -3,7 +3,7 @@
 use crate::player::NowPlaying;
 use rodio::{
     source::{Empty, Zero},
-    OutputStream, OutputStreamHandle, Source,
+    OutputStream, Source,
 };
 use std::{
     collections::VecDeque,
@@ -13,13 +13,10 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{
-    oneshot,
-    watch::{self, Receiver, Sender},
-};
+use tokio::sync::watch::{self, Receiver, Sender};
 
 struct Output {
-    controller: Arc<Controller>,
+    controller: Controller,
     np: Track,
     np_tx: Sender<Option<NowPlaying>>,
 }
@@ -67,33 +64,30 @@ impl Iterator for Output {
                 return Some(sample);
             }
 
-            // signal end of track
-            if let Some(tx) = self.np.signal.take() {
-                tx.send(()).unwrap();
-            }
             if let Some(name) = &self.np.name {
                 debug!("end of track: {:?}", name);
             }
 
             // get next track
             let mut q = self.controller.q.lock().unwrap();
-            if !q.is_empty() {
-                self.np = q.pop_front().unwrap();
+            if let Some(next) = q.pop_front() {
+                self.np = next;
                 if let Some(name) = &self.np.name {
                     info!("playing: {:?}", name);
                 }
             } else {
                 // play a bit of silence
                 self.np = Track {
-                    src: Box::new(Zero::new(1, 44100).take_duration(Duration::from_millis(500))), // this will give every play a worst-case 500ms delay, but in the context of this program and the benefits of lower resource usage, that's acceptable
+                    // this will give every play a worst-case 500ms delay, but in the context of this program and the benefits of lower resource usage, that's acceptable
+                    src: Box::new(Zero::new(1, 44100).take_duration(Duration::from_millis(500))),
                     name: None,
-                    signal: None,
                 };
             }
 
             // signal start of track
             self.np_tx.send_if_modified(|np| {
-                if self.np.name.is_none() && np.is_none() {
+                // if self.np.name.is_none() && np.is_none() {
+                if self.np.name.as_ref() == np.as_ref().map(|n| &n.name) {
                     return false;
                 }
                 *np = self.np.name.clone().map(|name| NowPlaying { name });
@@ -103,49 +97,48 @@ impl Iterator for Output {
     }
 }
 
+#[derive(Clone)]
 pub struct Controller {
-    pub q: Mutex<VecDeque<Track>>,
+    pub q: Arc<Mutex<VecDeque<Track>>>,
     controls: Arc<Controls>,
 }
 impl Controller {
-    pub fn init() -> (
-        Arc<Controller>,
-        Receiver<Option<NowPlaying>>,
-        OutputStream,
-        OutputStreamHandle,
-    ) {
+    pub fn init() -> (Controller, Receiver<Option<NowPlaying>>) {
         let (_stream, _handle) = OutputStream::try_default().expect("failed to find output device");
         let (np_tx, np_rx) = watch::channel(None);
-        let controller = Arc::new(Controller {
-            q: Mutex::new(VecDeque::new()),
+        let controller = Controller {
+            q: Arc::new(Mutex::new(VecDeque::new())),
             controls: Arc::new(Controls {
                 stop: AtomicBool::new(false),
             }),
-        });
+        };
         let output = Output {
-            controller: Arc::clone(&controller),
+            controller: controller.clone(),
             np: Track {
-                src: Box::new(Empty::<f32>::new()),
+                src: Box::new(Empty::new()),
                 name: None,
-                signal: None,
             },
             np_tx,
         };
 
-        // exit the tokio context to be able to use blocking functions
-        let h = _handle.clone();
-        tokio::task::spawn_blocking(move || h.play_raw(output).unwrap());
+        // exit the tokio async thread to be able to use blocking functions
+        tokio::task::spawn_blocking(move || {
+            _handle.play_raw(output).unwrap();
+            Box::leak(Box::new(_handle));
+        });
 
-        (controller, np_rx, _stream, _handle)
+        Box::leak(Box::new(_stream));
+
+        (controller, np_rx)
     }
 
     pub fn append(&self, mut t: Track) {
         // resume playback
         self.controls.stop.store(false, Ordering::Relaxed);
 
-        let c = Arc::clone(&self.controls);
+        let c = self.controls.clone();
         t.src = Box::new(t.src.stoppable().periodic_access(
-            Duration::from_millis(10),
+            Duration::from_millis(420),
             move |src| {
                 if c.stop.load(Ordering::Relaxed) {
                     src.stop();
@@ -169,6 +162,5 @@ struct Controls {
 
 pub struct Track {
     pub name: Option<String>,
-    pub signal: Option<oneshot::Sender<()>>,
     pub src: Box<dyn Source<Item = f32> + Send + Sync>,
 }

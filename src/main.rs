@@ -15,7 +15,7 @@ use std::env;
 
 include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "warp=info,csengo=debug");
@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     let (conn, db_new) = db::init()?;
 
     // audio setup
-    let (controller, np_rx, _stream, _handle) = sink::Controller::init();
+    let (controller, np_rx) = sink::Controller::init();
     let player = player::Player::new(controller, np_rx, conn);
 
     if !db_new {

@@ -7,15 +7,15 @@ use axum::{
     Json, Router,
 };
 use rust_embed::RustEmbed;
-use std::{env::var, net::IpAddr, sync::Arc};
+use std::{env::var, net::IpAddr};
 
-pub type AppState = State<Arc<Player>>;
+pub type AppState = State<Player>;
 
 #[derive(RustEmbed)]
 #[folder = "static"]
 pub struct Static;
 
-pub async fn init(p: Arc<Player>) -> ! {
+pub async fn init(p: Player) -> ! {
     let app = Router::new()
         .route("/", get(templates::Index::get))
         .route("/static/*path", get(static_handler))

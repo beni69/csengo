@@ -15,14 +15,18 @@ fn main() {
         git_ref += "*";
     }
 
-    let code = const_declaration!(GIT_REF = git_ref);
+    let code = vec![
+        "#[allow(clippy::redundant_static_lifetimes)]",
+        &const_declaration!(GIT_REF = git_ref),
+    ]
+    .join("\n");
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("const_gen.rs");
     write(dest_path, code).unwrap();
 
     //build fontend
-    //
+
     // for some weird reason ci builds fail on this step on windows
     #[cfg(windows)]
     if std::env::var("CI").is_ok() {

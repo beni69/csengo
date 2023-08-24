@@ -1,13 +1,12 @@
 use crate::{db, mail, player::Player, Task};
 use chrono::Local;
 use futures_util::{stream::FuturesUnordered, StreamExt};
-use std::sync::Arc;
 use tokio::{
     select,
     time::{interval_at, Duration, Instant, MissedTickBehavior},
 };
 
-pub async fn schedule(task: Task, player: Arc<Player>) -> anyhow::Result<()> {
+pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
     match task {
         Task::Now { file_name, .. } => {
             player.play_file(&file_name).await?;

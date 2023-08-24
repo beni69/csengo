@@ -7,34 +7,38 @@ use crate::{
 use anyhow::Result;
 use axum::{http::StatusCode, response::Response};
 use bytes::Bytes;
-use rodio::{source::SineWave, Decoder, Source};
+use rodio::{
+    source::{ChannelVolume, SineWave, UniformSourceIterator},
+    Decoder, Source,
+};
 use rusqlite::Connection;
 use serde::Serialize;
 use std::{collections::HashMap, io::Cursor, sync::Arc, time::Duration};
 use tokio::sync::{
     oneshot,
     watch::{Receiver, Ref},
-    MutexGuard,
+    Mutex, MutexGuard,
 };
 
+#[derive(Clone)]
 pub struct Player {
-    pub controller: Arc<Controller>,
+    pub controller: Controller,
     pub conn: db::Db,
     np_rx: Receiver<Option<NowPlaying>>,
-    cancel_map: Arc<tokio::sync::Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    cancel_map: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 impl Player {
     pub fn new(
-        controller: Arc<Controller>,
+        controller: Controller,
         np_rx: Receiver<Option<NowPlaying>>,
         conn: Connection,
-    ) -> Arc<Self> {
-        Arc::new(Player {
+    ) -> Self {
+        Player {
             controller,
-            conn: Arc::new(tokio::sync::Mutex::new(conn)),
+            conn: Arc::new(Mutex::new(conn)),
             np_rx,
-            cancel_map: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
-        })
+            cancel_map: Arc::new(Mutex::new(HashMap::new())),
+        }
     }
 
     pub fn stop(&self) {
@@ -42,15 +46,20 @@ impl Player {
     }
 
     pub async fn play_file(&self, fname: &str) -> Result<()> {
+        let right = false;
         let file = db::get_file(&*self.conn.lock().await, fname)?;
-        self.play_buf(file.data, fname)
+        self.play_buf(file.data, fname, right)
     }
-    pub fn play_buf(&self, buf: Bytes, fname: &str) -> Result<()> {
+    pub fn play_buf(&self, buf: Bytes, fname: &str, right: bool) -> Result<()> {
         let src = Decoder::new(Cursor::new(buf))?;
+        // https://github.com/RustAudio/rodio/pull/493: ChannelVolume distorts the audio if the
+        // input sample rate isn't constant, so we manually normalize it here.
+        let src: UniformSourceIterator<_, f32> = UniformSourceIterator::new(src, 2, 48000);
+        let src = ChannelVolume::new(src, vec![0.5, if right { 0.5 } else { 0.0 }]);
+
         self.controller.append(Track {
-            src: Box::new(src.convert_samples()),
+            src: Box::new(src),
             name: Some(fname.into()),
-            signal: None,
         });
         Ok(())
     }
@@ -87,7 +96,6 @@ impl Player {
         self.controller.append(Track {
             src: Box::new(source),
             name: Some("playtest".into()),
-            signal: None,
         });
     }
 

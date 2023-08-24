@@ -17,7 +17,7 @@ use axum::{
 };
 use chrono::{DateTime, Local, TimeZone};
 use futures_util::{Stream, StreamExt};
-use std::{collections::HashMap, convert::Infallible, sync::Arc};
+use std::{collections::HashMap, convert::Infallible};
 
 /// the format for sending dates to the frontend
 pub static DATEFMT: &str = "%Y-%m-%dT%H:%M";
@@ -204,7 +204,7 @@ impl Tasks {
 
         Tasks::get(State(p)).await
     }
-    async fn post_inner(p: Arc<Player>, mut f: HashMap<String, String>) -> anyhow::Result<()> {
+    async fn post_inner(p: Player, mut f: HashMap<String, String>) -> anyhow::Result<()> {
         let Some(name) = f.remove("name") else {anyhow::bail!("Missing value `name`")};
         let Some(file_name) = f.remove("file_name") else {anyhow::bail!("Missing value `file_name`")};
 
@@ -356,7 +356,7 @@ impl Files {
 }
 
 /// to be sent back when the files were mutated, as these depend on that data
-async fn updated_files(p: Arc<Player>) -> Result<impl IntoResponse, Response> {
+async fn updated_files(p: Player) -> Result<impl IntoResponse, Response> {
     let files = p.lock().await.list_files()?;
 
     let file_list = Files {
