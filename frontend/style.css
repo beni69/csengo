@@ -13,7 +13,6 @@ header {
     margin: 1em 0;
 }
 
-
 main {
     display: flex;
     flex-wrap: wrap;
@@ -52,6 +51,7 @@ form#task {
 .item p {
     margin: 0;
     height: 100%;
+    max-width: 25em;
 }
 
 .item .top-row {
