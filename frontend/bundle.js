@@ -40,12 +40,13 @@ htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
 });
 
 const sleep = async ms => new Promise(r => setTimeout(r, ms));
-(async () => {
+document.addEventListener("DOMContentLoaded", async () => {
     while (true) {
         console.debug("sub realtime");
         const res = await fetch("/htmx/status/realtime").then(r => r.text());
         console.debug("recv realtime", res);
         document.getElementById("status").outerHTML = res;
+        htmx.process(document.getElementById("status"));
         await sleep(250);
     }
-})()
+});

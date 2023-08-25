@@ -41,6 +41,4 @@ kelleni:
 ## todo
 
 - [ ] task import
-- [ ] relative duration format for tasks (maybe roll a custom localized impl on the server?)
-- [ ] now playing duration and timestamp
 - [ ] use [systemd credentials](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials) instead of an env file

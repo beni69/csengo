@@ -1,4 +1,4 @@
-use crate::{db, mail, player::Player, Task};
+use crate::{db, mail, player::Player, templates::dur_human, Task};
 use chrono::Local;
 use futures_util::{stream::FuturesUnordered, StreamExt};
 use tokio::{
@@ -27,8 +27,9 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             (time - Local::now()).to_std()?;
 
             tokio::task::spawn(async move {
-                let diff = (time - Local::now()).to_std().unwrap();
-                debug!("{}: waiting {}s", name, diff.as_secs());
+                let diff = time - Local::now();
+                debug!("{}: {}", name, dur_human(&diff).0);
+                let diff = diff.to_std().unwrap();
 
                 let rx = player.create_cancel(name.to_owned()).await;
                 if select! {
@@ -76,7 +77,8 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                     ),
                 };
                 debug!(
-                    "{name} (recurring): waiting {diff:.0?} for first play {}",
+                    "{name} (recurring): {} {}",
+                    dur_human(&chrono::Duration::from_std(diff.clone()).unwrap()).0,
                     if tmrw { "+" } else { "" }
                 );
                 let start: Instant = Instant::now() + diff;

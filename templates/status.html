@@ -1,7 +1,16 @@
-<div id="status">
+<div id="status" {%- if np|has_len %} hx-get="/htmx/status" hx-trigger="every 1s" hx-swap="outerHTML" {%- endif %}>
     {% match np %}
     {%- when Some with (np) %}
     Most szól: {{ np.name }}
+
+    {% if let Some(len) = np.len %}
+    <div id="status-progress">
+        <p>{{ np.started.elapsed()|durfmt }}</p>
+        <progress value="{{ np.started.elapsed().as_millis() }}" max="{{ len.as_millis() }}"></progress>
+        <p>{{ len.clone()|durfmt }}</p>
+    </div>
+    {%- endif %}
+
     {%- when None %}
     Most nem szól semmi...
     {%- endmatch %}

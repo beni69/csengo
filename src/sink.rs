@@ -11,13 +11,13 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::sync::watch::{self, Receiver, Sender};
 
 struct Output {
     controller: Controller,
-    np: Track,
+    track: Track,
     np_tx: Sender<Option<NowPlaying>>,
 }
 impl Source for Output {
@@ -25,13 +25,13 @@ impl Source for Output {
     // see [`rodio::queue::SourcesQueueOutput::current_frame_len`]
     #[inline]
     fn current_frame_len(&self) -> Option<usize> {
-        if let Some(len) = self.np.src.current_frame_len() {
+        if let Some(len) = self.track.src.current_frame_len() {
             if len > 0 {
                 return Some(len);
             }
         }
 
-        let (lower, _) = self.np.src.size_hint();
+        let (lower, _) = self.track.src.size_hint();
         if lower > 0 {
             return Some(lower);
         }
@@ -41,12 +41,12 @@ impl Source for Output {
 
     #[inline]
     fn channels(&self) -> u16 {
-        self.np.src.channels()
+        self.track.src.channels()
     }
 
     #[inline]
     fn sample_rate(&self) -> u32 {
-        self.np.src.sample_rate()
+        self.track.src.sample_rate()
     }
 
     #[inline]
@@ -60,24 +60,24 @@ impl Iterator for Output {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             // keep playing current track
-            if let Some(sample) = self.np.src.next() {
+            if let Some(sample) = self.track.src.next() {
                 return Some(sample);
             }
 
-            if let Some(name) = &self.np.name {
+            if let Some(name) = &self.track.name {
                 debug!("end of track: {:?}", name);
             }
 
             // get next track
             let mut q = self.controller.q.lock().unwrap();
             if let Some(next) = q.pop_front() {
-                self.np = next;
-                if let Some(name) = &self.np.name {
+                self.track = next;
+                if let Some(name) = &self.track.name {
                     info!("playing: {:?}", name);
                 }
             } else {
                 // play a bit of silence
-                self.np = Track {
+                self.track = Track {
                     // this will give every play a worst-case 500ms delay, but in the context of this program and the benefits of lower resource usage, that's acceptable
                     src: Box::new(Zero::new(1, 44100).take_duration(Duration::from_millis(500))),
                     name: None,
@@ -85,14 +85,22 @@ impl Iterator for Output {
             }
 
             // signal start of track
-            self.np_tx.send_if_modified(|np| {
-                // if self.np.name.is_none() && np.is_none() {
-                if self.np.name.as_ref() == np.as_ref().map(|n| &n.name) {
-                    return false;
-                }
-                *np = self.np.name.clone().map(|name| NowPlaying { name });
-                true
-            });
+            self.np_tx
+                .send_if_modified(|prev| match (&prev, self.track.name.to_owned()) {
+                    (None, None) => false,
+                    (Some(_), None) => {
+                        *prev = None;
+                        true
+                    }
+                    (_, Some(name)) => {
+                        *prev = Some(NowPlaying {
+                            name,
+                            len: self.track.src.total_duration(),
+                            started: Instant::now(),
+                        });
+                        true
+                    }
+                });
         }
     }
 }
@@ -114,7 +122,7 @@ impl Controller {
         };
         let output = Output {
             controller: controller.clone(),
-            np: Track {
+            track: Track {
                 src: Box::new(Empty::new()),
                 name: None,
             },

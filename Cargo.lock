@@ -1705,7 +1705,7 @@ dependencies = [
 [[package]]
 name = "rodio"
 version = "0.17.1"
-source = "git+https://github.com/RustAudio/rodio.git?rev=refs/pull/493/head#1167092aedf6b65121e8b5d045c1361a62829ddb"
+source = "git+https://github.com/beni69/rodio.git?branch=master#aec2f80064ca3a7c8c9a931d500df9b696de6d92"
 dependencies = [
  "cpal",
  "lewton",

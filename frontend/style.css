@@ -5,6 +5,13 @@ header {
     align-items: center;
     width: 100%;
     padding: 0 !important;
+    text-align: center;
+}
+#status-progress {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
 }
 
 #title {

@@ -13,7 +13,12 @@ use rodio::{
 };
 use rusqlite::Connection;
 use serde::Serialize;
-use std::{collections::HashMap, io::Cursor, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    io::Cursor,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::{
     oneshot,
     watch::{Receiver, Ref},
@@ -22,7 +27,7 @@ use tokio::sync::{
 
 #[derive(Clone)]
 pub struct Player {
-    pub controller: Controller,
+    controller: Controller,
     pub conn: db::Db,
     np_rx: Receiver<Option<NowPlaying>>,
     cancel_map: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
@@ -75,10 +80,8 @@ impl Player {
         fn inner(r: tokio::sync::watch::Ref<'_, Option<NowPlaying>>) -> Option<NowPlaying> {
             r.to_owned()
         }
-        let mut rx = self.np_realtime();
+        let mut rx = self.np_rx.clone();
         async_stream::stream! {
-            let data = inner(rx.borrow());
-            yield data;
             while rx.changed().await.is_ok() {
                 let data = inner(rx.borrow());
                 yield data;
@@ -152,10 +155,9 @@ impl PlayerLock<'_> {
         })
     }
 }
-
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct NowPlaying {
     pub name: String,
-    // pos: Duration,
-    // len: Duration,
+    pub len: Option<Duration>,
+    pub started: Instant,
 }

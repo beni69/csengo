@@ -26,7 +26,7 @@ pub static DATEFMT: &str = "%Y-%m-%dT%H:%M";
 #[template(path = "index.html")]
 pub struct Index {
     np: Option<NowPlaying>,
-    pub tasks: Vec<Task>,
+    pub tasks: Tasks,
     pub files: Vec<String>,
     pub time: Time,
 }
@@ -41,7 +41,7 @@ impl Index {
 
         Ok(Self {
             np,
-            tasks,
+            tasks: Tasks::new(tasks),
             files,
             time: Time::default(),
         })
@@ -185,17 +185,33 @@ impl TaskForm {
 #[template(path = "tasks.html")]
 pub struct Tasks {
     pub tasks: Vec<Task>,
+    pub elapsed: Vec<String>,
+    pub refr: u32,
 }
 impl Tasks {
+    fn new(tasks: Vec<Task>) -> Self {
+        let (elapsed, refr): (Vec<_>, Vec<_>) = tasks
+            .iter()
+            .map(filters::task_elapsed)
+            .map(Result::unwrap)
+            .unzip();
+
+        let refr = refr.into_iter().filter(|n| *n > 0).min().unwrap_or(0);
+
+        Self {
+            tasks,
+            elapsed,
+            refr,
+        }
+    }
     pub async fn get(State(p): AppState) -> Result<impl IntoResponse, Response> {
         let tasks = p.lock().await.list_tasks()?;
-        Ok(Self { tasks })
+        Ok(Self::new(tasks))
     }
     pub async fn post(
         State(p): AppState,
         Form(f): Form<HashMap<String, String>>,
     ) -> Result<impl IntoResponse, Response> {
-        dbg!(&f);
         let res = Self::post_inner(p.clone(), f).await;
         if let Err(e) = res {
             error!("post task: {e:#?}");
@@ -216,6 +232,9 @@ impl Tasks {
                 file_name,
             },
             "scheduled" => {
+                if name.trim().is_empty() {
+                    anyhow::bail!("`name` can't be empty")
+                };
                 let Some(Ok(time)) = f.remove("time").map(|s|Local.datetime_from_str(&s, DATEFMT)) else {anyhow::bail!("Missing or invalid value `time`")};
 
                 // check if scheduled task is in the future
@@ -234,6 +253,9 @@ impl Tasks {
                 task
             }
             "recurring" => {
+                if name.trim().is_empty() {
+                    anyhow::bail!("`name` can't be empty")
+                };
                 let Some(Ok(n)) = f.remove("recurring-n").map(|s|s.parse::<usize>()) else {anyhow::bail!("Missing value `recurring-n`")};
 
                 let mut times = Vec::new();
@@ -405,10 +427,105 @@ fn query_times(q: &HashMap<String, String>, times: &mut Vec<Option<DateTime<Loca
     }
 }
 
+pub use filters::dur_human;
 mod filters {
-    use chrono::{DateTime, Local};
+    use std::time::Duration;
 
-    pub fn datefmt(d: &DateTime<Local>) -> askama::Result<String> {
+    use askama::Result;
+    use chrono::{DateTime, Local, NaiveTime};
+
+    use crate::{player::NowPlaying, Task};
+
+    pub fn datefmt(d: &DateTime<Local>) -> Result<String> {
         Ok(d.format(super::DATEFMT).to_string())
+    }
+    pub fn durfmt(d: Duration) -> Result<String> {
+        let secs = d.as_secs() as u32;
+        let Some(time) =
+            NaiveTime::from_num_seconds_from_midnight_opt(secs, d.subsec_nanos() as u32) else {
+                return Ok("L".to_string());
+            };
+
+        let fmt = if secs >= 60 * 60 { "%H:%M:%S" } else { "%M:%S" };
+        Ok(time.format(fmt).to_string())
+    }
+    pub fn task_timefmt(task: &Task) -> Result<String> {
+        let s = match task {
+            Task::Now { .. } => return Ok("".into()),
+            Task::Scheduled { time, .. } => datefmt(time)?.replace('T', " "),
+            Task::Recurring { .. } => task.time_to_str().unwrap().replace(';', ", "),
+        };
+        Ok(s)
+    }
+    pub fn task_elapsed(task: &Task) -> Result<(String, u32)> {
+        let next: chrono::Duration = match task {
+            Task::Now { .. } => return Ok(("".into(), 0)),
+            Task::Scheduled { time, .. } => *time - Local::now(),
+            Task::Recurring { time: times, .. } => {
+                let now = Local::now().time();
+                times
+                    .into_iter()
+                    .map(|t| *t - now)
+                    .map(|t| {
+                        if t.num_milliseconds() < 0 {
+                            t + chrono::Duration::days(1)
+                        } else {
+                            t
+                        }
+                    })
+                    .min()
+                    .unwrap()
+            }
+        };
+        Ok(dur_human(&next))
+    }
+
+    static DICT_FUT: [&str; 7] = [
+        "másodperc múlva",
+        "perc múlva",
+        "óra múlva",
+        "nap múlva",
+        "hét múlva",
+        "hónap múlva",
+        "év múlva",
+    ];
+    static DICT_PAST: [&str; 7] = [
+        "másodperce",
+        "perce",
+        "órája",
+        "napja",
+        "hete",
+        "hónapja",
+        "éve",
+    ];
+    static DIV: [u32; 8] = [
+        1,
+        60,
+        60 * 60,
+        60 * 60 * 24,
+        60 * 60 * 24 * 7,
+        60 * 60 * 24 * 30,
+        60 * 60 * 24 * 365,
+        u32::MAX,
+    ];
+    pub fn dur_human(d: &chrono::Duration) -> (String, u32) {
+        let secs = d.num_seconds();
+        if secs == 0 {
+            return ("most".to_string(), 1); // refetch in 1s to see it disappear
+        }
+
+        let arr = if secs >= 0 { &DICT_FUT } else { &DICT_PAST };
+        let secs = secs.abs() as u32;
+        for (word, (max, div)) in arr.iter().zip(DIV.iter().skip(1).zip(DIV)) {
+            if secs > *max {
+                continue;
+            }
+            return (format!("{} {word}", secs / div), div);
+        }
+        unreachable!("u32::MAX")
+    }
+
+    pub fn has_len(np: &Option<NowPlaying>) -> Result<bool> {
+        Ok(np.as_ref().map_or(false, |n| n.len.is_some()))
     }
 }

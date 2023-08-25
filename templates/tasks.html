@@ -3,15 +3,17 @@
     Üres...
 </div>
 {% else %}
-<div id="tasks" class="list" hx-confirm="Biztosan törlöd?" hx-target="#tasks" hx-swap="outerHTML">
-    {% for task in tasks %}
+<div id="tasks" class="list" hx-target="#tasks" hx-swap="outerHTML"
+    {%- if refr > 0 %} hx-get="/htmx/task" hx-trigger="every {{ refr }}s" {%- endif %}>
+    {% for (task, elapsed) in tasks.iter().zip(elapsed) %}
     <div class="item">
         <div class="top-row">
             <p>{{ task.get_name() }}</p>
-            <button class="delete" hx-delete="/htmx/task/{{ task.get_name() }}">&Cross;</button>
+            <button class="delete" hx-delete="/htmx/task/{{ task.get_name() }}" hx-confirm="Biztosan törlöd?">&Cross;</button>
         </div>
         {% if task.get_type() != "now" %}
-        <p>{{ task.time_to_str().unwrap().replace(";", ", ") }}</p>
+        <p>{{ task|task_timefmt }}</p>
+        <p><i>{{ elapsed }}</i></p>
         {% endif %}
     </div>
     {% endfor %}
