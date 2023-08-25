@@ -206,10 +206,15 @@ impl Tasks {
     }
     async fn post_inner(p: Player, mut f: HashMap<String, String>) -> anyhow::Result<()> {
         let Some(name) = f.remove("name") else {anyhow::bail!("Missing value `name`")};
+        let Some(Some(priority)) = f.remove("priority").map(|s|Some(match s.as_str(){"false"|"0"|"off"=>false,"true"|"1"|"on"=>true,_=>return None})) else {anyhow::bail!("Missing or invalid value `priority`")};
         let Some(file_name) = f.remove("file_name") else {anyhow::bail!("Missing value `file_name`")};
 
         let task: Task = match f.get("type").map(String::as_str).unwrap_or("now") {
-            "now" => Task::Now { name, file_name },
+            "now" => Task::Now {
+                name,
+                priority,
+                file_name,
+            },
             "scheduled" => {
                 let Some(Ok(time)) = f.remove("time").map(|s|Local.datetime_from_str(&s, DATEFMT)) else {anyhow::bail!("Missing or invalid value `time`")};
 
@@ -220,6 +225,7 @@ impl Tasks {
 
                 let task = Task::Scheduled {
                     name,
+                    priority,
                     file_name,
                     time,
                 };
@@ -249,6 +255,7 @@ impl Tasks {
 
                 let task = Task::Recurring {
                     name,
+                    priority,
                     file_name,
                     time,
                 };

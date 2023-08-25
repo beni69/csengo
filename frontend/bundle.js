@@ -30,6 +30,11 @@ document.addEventListener("htmx:responseError", e => {
     console.error(e);
 });
 
+htmx.on("form#task", "htmx:configRequest", e => {
+    if (e.detail.elt.id !== "task") return;
+    e.detail.parameters["priority"] ??= 0;
+});
+
 htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
     htmx.find("#fileupload #progress").setAttribute("value", e.detail.loaded / e.detail.total * 100)
 });
@@ -37,9 +42,9 @@ htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
 const sleep = async ms => new Promise(r => setTimeout(r, ms));
 (async () => {
     while (true) {
-        console.log("sub realtime");
+        console.debug("sub realtime");
         const res = await fetch("/htmx/status/realtime").then(r => r.text());
-        console.log("recv realtime", res);
+        console.debug("recv realtime", res);
         document.getElementById("status").outerHTML = res;
         await sleep(250);
     }

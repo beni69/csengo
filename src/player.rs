@@ -45,17 +45,16 @@ impl Player {
         self.controller.stop();
     }
 
-    pub async fn play_file(&self, fname: &str) -> Result<()> {
-        let right = false;
+    pub async fn play_file(&self, fname: &str, priority: bool) -> Result<()> {
         let file = db::get_file(&*self.conn.lock().await, fname)?;
-        self.play_buf(file.data, fname, right)
+        self.play_buf(file.data, fname, priority)
     }
-    pub fn play_buf(&self, buf: Bytes, fname: &str, right: bool) -> Result<()> {
+    pub fn play_buf(&self, buf: Bytes, fname: &str, priority: bool) -> Result<()> {
         let src = Decoder::new(Cursor::new(buf))?;
         // https://github.com/RustAudio/rodio/pull/493: ChannelVolume distorts the audio if the
         // input sample rate isn't constant, so we manually normalize it here.
         let src: UniformSourceIterator<_, f32> = UniformSourceIterator::new(src, 2, 48000);
-        let src = ChannelVolume::new(src, vec![0.5, if right { 0.5 } else { 0.0 }]);
+        let src = ChannelVolume::new(src, vec![0.5, if priority { 0.5 } else { 0.0 }]);
 
         self.controller.append(Track {
             src: Box::new(src),

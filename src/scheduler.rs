@@ -8,12 +8,17 @@ use tokio::{
 
 pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
     match task {
-        Task::Now { file_name, .. } => {
-            player.play_file(&file_name).await?;
+        Task::Now {
+            file_name,
+            priority,
+            ..
+        } => {
+            player.play_file(&file_name, priority).await?;
         }
 
         Task::Scheduled {
             name,
+            priority,
             file_name,
             time,
         } => {
@@ -35,7 +40,7 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                     return;
                 }
 
-                if let Err(e) = player.play_file(&file_name).await {
+                if let Err(e) = player.play_file(&file_name, priority).await {
                     error!("error while playing {}:\n{e:#?}", file_name);
                 } else {
                     // successful play
@@ -53,6 +58,7 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
 
         Task::Recurring {
             name,
+            priority,
             file_name,
             time: times,
         } => {
@@ -97,7 +103,7 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                         return;
                     }
 
-                    if let Err(e) = player.play_file(&file_name).await {
+                    if let Err(e) = player.play_file(&file_name, priority).await {
                         error!("{name}: recurring play failed\n{e:#?}");
                     } else {
                         debug!("{name}: added to queue, going back to sleep");

@@ -29,6 +29,9 @@ section {
 form#task {
     margin-bottom: 0;
 }
+#priority {
+    margin-bottom: var(--spacing);
+}
 #btn-stop {
     color: var(--del-color);
     border-color: var(--del-color);

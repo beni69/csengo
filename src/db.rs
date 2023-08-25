@@ -8,31 +8,75 @@ pub type Db = Arc<Mutex<Connection>>;
 
 const DB_FILE: &str = "./csengo.db";
 
+const DB_VERSION: u32 = 1;
+
+const CREATE_TABLES: &str = "
+CREATE TABLE tasks (
+    type      TEXT NOT NULL,
+    name      TEXT PRIMARY KEY,
+    priority  INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    time      TEXT
+), STRICT;
+CREATE TABLE files (
+    name      TEXT PRIMARY KEY,
+    data      BLOB
+), STRICT;
+";
+
 // the format of recurring times in the db
 pub static TIMEFMT: &str = "%H:%M";
 
 pub fn init() -> Result<(Connection, bool)> {
     let db_new = !Path::new(DB_FILE).try_exists().unwrap_or(false);
-    let conn = Connection::open(DB_FILE)?;
+    let mut conn = Connection::open(DB_FILE)?;
     if db_new {
-        info!("initializing db");
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS tasks (
-                type      TEXT NOT NULL,
-                name      TEXT PRIMARY KEY,
-                file_name TEXT NOT NULL,
-                time      TEXT
-            );
-            CREATE TABLE IF NOT EXISTS files (
-                name      TEXT PRIMARY KEY,
-                data      BLOB
-            );",
-        )?;
+        info!("no db found, initializing...");
+        let tr = conn.transaction()?;
+        tr.execute_batch(CREATE_TABLES)?;
+        tr.pragma_update(None, "user_version", DB_VERSION)?;
+        tr.commit()?;
+    } else {
+        let version: u32 =
+            conn.pragma_query_value(None, "user_version", |r| r.get("user_version"))?;
+
+        if version != DB_VERSION {
+            migrate(&conn, version)?;
+        }
     }
-    info!("db init successful");
+    info!("db connect successful");
     Ok((conn, db_new))
 }
-pub async fn load(player: Arc<Player>) -> anyhow::Result<usize> {
+
+fn migrate(conn: &Connection, version: u32) -> Result<()> {
+    info!("existing db at v{version} (latest: v{DB_VERSION}), running migrations");
+
+    for i in version..DB_VERSION {
+        match i {
+            0 => {
+                conn.execute_batch(&format!(
+                    "BEGIN EXCLUSIVE;
+                     ALTER TABLE tasks RENAME TO old_tasks;
+                     ALTER TABLE files RENAME TO old_files;
+                     {CREATE_TABLES}
+                     INSERT INTO tasks SELECT *, 0 as priority FROM old_tasks;
+                     INSERT INTO files SELECT * FROM old_files;
+                     COMMIT;"
+                ))?;
+            }
+            DB_VERSION.. => (),
+        }
+        debug!(
+            "applied {} migrations (v{} -> v{DB_VERSION})",
+            DB_VERSION - version - i,
+            i
+        );
+    }
+    conn.pragma_update(None, "user_version", DB_VERSION)?;
+    return Ok(());
+}
+
+pub async fn load(player: Player) -> anyhow::Result<usize> {
     let conn = &*player.conn.lock().await;
     let tasks = list_tasks(conn)?;
     let mut len = tasks.len();
@@ -77,15 +121,20 @@ pub fn get_file(conn: &Connection, name: &str) -> Result<File> {
 }
 pub fn delete_file(conn: &Connection, name: &str) -> Result<()> {
     conn.execute("DELETE FROM files WHERE name == ?", (name,))
-        .map(|_| ())
+        .map(|_| ())?;
+    // a file could have been large and file deletes are infrequent,
+    // might as well optimize the db
+    conn.execute("VACUUM", ())?;
+    Ok(())
 }
 
 pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {
     conn.execute(
-        "INSERT INTO tasks (type, name, file_name, time) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO tasks (type, name, priority, file_name, time) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             task.get_type(),
             task.get_name(),
+            task.get_priority(),
             task.get_file_name(),
             task.time_to_str()
         ],
@@ -108,18 +157,21 @@ fn parse_task(r: &Row) -> Result<Task, Error> {
     Ok(match r.get::<_, String>(0)?.as_str() {
         "now" => Task::Now {
             name: r.get(1)?,
-            file_name: r.get(2)?,
+            priority: r.get(2)?,
+            file_name: r.get(3)?,
         },
         "scheduled" => Task::Scheduled {
             name: r.get(1)?,
-            file_name: r.get(2)?,
-            time: r.get(3)?,
+            priority: r.get(2)?,
+            file_name: r.get(3)?,
+            time: r.get(4)?,
         },
         "recurring" => Task::Recurring {
             name: r.get(1)?,
-            file_name: r.get(2)?,
+            priority: r.get(2)?,
+            file_name: r.get(3)?,
             time: r
-                .get::<_, String>(3)?
+                .get::<_, String>(4)?
                 .split(';')
                 .map(|s| {
                     NaiveTime::parse_from_str(s, TIMEFMT).map_err(|e| {

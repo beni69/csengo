@@ -51,102 +51,63 @@ async fn main() -> anyhow::Result<()> {
 pub enum Task {
     Now {
         name: String,
+        priority: bool,
         file_name: String,
     },
     Scheduled {
         name: String,
         file_name: String,
+        priority: bool,
         time: DateTime<Local>,
     },
     Recurring {
         name: String,
         file_name: String,
+        priority: bool,
         time: Vec<NaiveTime>,
     },
 }
 impl Task {
     pub fn is_now(&self) -> bool {
         match self {
-            Task::Now {
-                name: _,
-                file_name: _,
-            } => true,
-            Task::Scheduled {
-                name: _,
-                file_name: _,
-                time: _,
-            } => false,
-            Task::Recurring {
-                name: _,
-                file_name: _,
-                time: _,
-            } => false,
+            Task::Now { .. } => true,
+            Task::Scheduled { .. } => false,
+            Task::Recurring { .. } => false,
         }
     }
     pub fn get_type(&self) -> &str {
         match self {
-            Task::Now {
-                name: _,
-                file_name: _,
-            } => "now",
-            Task::Scheduled {
-                name: _,
-                file_name: _,
-                time: _,
-            } => "scheduled",
-            Task::Recurring {
-                name: _,
-                file_name: _,
-                time: _,
-            } => "recurring",
+            Task::Now { .. } => "now",
+            Task::Scheduled { .. } => "scheduled",
+            Task::Recurring { .. } => "recurring",
         }
     }
     pub fn get_name(&self) -> &String {
         match self {
-            Task::Now { name, file_name: _ } => name,
-            Task::Scheduled {
-                name,
-                file_name: _,
-                time: _,
-            } => name,
-            Task::Recurring {
-                name,
-                file_name: _,
-                time: _,
-            } => name,
+            Task::Now { name, .. } => name,
+            Task::Scheduled { name, .. } => name,
+            Task::Recurring { name, .. } => name,
+        }
+    }
+    pub fn get_priority(&self) -> bool {
+        match *self {
+            Task::Now { priority, .. } => priority,
+            Task::Scheduled { priority, .. } => priority,
+            Task::Recurring { priority, .. } => priority,
         }
     }
     pub fn get_file_name(&self) -> &String {
         match self {
-            Task::Now { name: _, file_name } => file_name,
-            Task::Scheduled {
-                name: _,
-                file_name,
-                time: _,
-            } => file_name,
-            Task::Recurring {
-                name: _,
-                file_name,
-                time: _,
-            } => file_name,
+            Task::Now { file_name, .. } => file_name,
+            Task::Scheduled { file_name, .. } => file_name,
+            Task::Recurring { file_name, .. } => file_name,
         }
     }
     pub fn time_to_str(&self) -> Option<String> {
         match self {
-            Task::Now {
-                name: _,
-                file_name: _,
-            } => None,
-            Task::Scheduled {
-                name: _,
-                file_name: _,
-                time,
-            } => Some(time.to_rfc3339_opts(SecondsFormat::Secs, true)),
-            Task::Recurring {
-                name: _,
-                file_name: _,
-                time,
-            } => Some(
+            Task::Now { .. } => None,
+            Task::Scheduled { time, .. } => Some(time.to_rfc3339_opts(SecondsFormat::Secs, true)),
+            Task::Recurring { time, .. } => Some(
                 time.iter()
                     .map(|t| t.format(db::TIMEFMT).to_string())
                     .collect::<Vec<String>>()
