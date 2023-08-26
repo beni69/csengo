@@ -15,7 +15,7 @@ fn main() {
         git_ref += "*";
     }
 
-    let code = vec![
+    let code = [
         "#[allow(clippy::redundant_static_lifetimes)]",
         &const_declaration!(GIT_REF = git_ref),
     ]

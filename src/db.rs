@@ -73,7 +73,7 @@ fn migrate(conn: &Connection, version: u32) -> Result<()> {
         );
     }
     conn.pragma_update(None, "user_version", DB_VERSION)?;
-    return Ok(());
+    Ok(())
 }
 
 pub async fn load(player: Player) -> anyhow::Result<usize> {

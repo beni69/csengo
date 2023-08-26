@@ -442,7 +442,7 @@ mod filters {
     pub fn durfmt(d: Duration) -> Result<String> {
         let secs = d.as_secs() as u32;
         let Some(time) =
-            NaiveTime::from_num_seconds_from_midnight_opt(secs, d.subsec_nanos() as u32) else {
+            NaiveTime::from_num_seconds_from_midnight_opt(secs, d.subsec_nanos()) else {
                 return Ok("L".to_string());
             };
 
@@ -464,7 +464,7 @@ mod filters {
             Task::Recurring { time: times, .. } => {
                 let now = Local::now().time();
                 times
-                    .into_iter()
+                    .iter()
                     .map(|t| *t - now)
                     .map(|t| {
                         if t.num_milliseconds() < 0 {
@@ -515,7 +515,7 @@ mod filters {
         }
 
         let arr = if secs >= 0 { &DICT_FUT } else { &DICT_PAST };
-        let secs = secs.abs() as u32;
+        let secs = secs.unsigned_abs() as u32;
         for (word, (max, div)) in arr.iter().zip(DIV.iter().skip(1).zip(DIV)) {
             if secs > *max {
                 continue;

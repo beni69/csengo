@@ -78,7 +78,7 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                 };
                 debug!(
                     "{name} (recurring): {} {}",
-                    dur_human(&chrono::Duration::from_std(diff.clone()).unwrap()).0,
+                    dur_human(&chrono::Duration::from_std(diff).unwrap()).0,
                     if tmrw { "+" } else { "" }
                 );
                 let start: Instant = Instant::now() + diff;
