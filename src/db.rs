@@ -27,7 +27,7 @@ CREATE TABLE files (
 // the format of recurring times in the db
 pub static TIMEFMT: &str = "%H:%M";
 
-pub fn init() -> Result<(Connection, bool)> {
+pub fn init() -> Result<(Db, bool)> {
     let db_new = !Path::new(DB_FILE).try_exists().unwrap_or(false);
     let mut conn = Connection::open(DB_FILE)?;
     if db_new {
@@ -45,7 +45,7 @@ pub fn init() -> Result<(Connection, bool)> {
         }
     }
     info!("db connect successful");
-    Ok((conn, db_new))
+    Ok((Arc::new(Mutex::new(conn)), db_new))
 }
 
 fn migrate(conn: &Connection, version: u32) -> Result<()> {
@@ -121,11 +121,7 @@ pub fn get_file(conn: &Connection, name: &str) -> Result<File> {
 }
 pub fn delete_file(conn: &Connection, name: &str) -> Result<()> {
     conn.execute("DELETE FROM files WHERE name == ?", (name,))
-        .map(|_| ())?;
-    // a file could have been large and file deletes are infrequent,
-    // might as well optimize the db
-    conn.execute("VACUUM", ())?;
-    Ok(())
+        .map(|_| ())
 }
 
 pub fn insert_task(conn: &Connection, task: &Task) -> Result<()> {

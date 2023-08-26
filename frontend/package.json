@@ -6,7 +6,6 @@
   },
   "dependencies": {
     "@picocss/pico": "^1.5.10",
-    "dayjs": "^1.11.9",
     "htmx.org": "^1.9.4"
   },
   "devDependencies": {

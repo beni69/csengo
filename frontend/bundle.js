@@ -1,25 +1,9 @@
-const htmx = require("htmx.org");
-globalThis.htmx = htmx; // xd
-
+// styles
 require("@picocss/pico");
 require("./style.css");
 
-// const dayjs = require("dayjs");
-// require("dayjs/locale/hu");
-// const relTime = require("dayjs/plugin/relativeTime");
-//
-// dayjs.locale("hu");
-// dayjs.extend(relTime);
-//
-// globalThis.durFmt = (_one, _two) => {
-//     const one = dayjs(_one);
-//     const two = dayjs(_two);
-//     if (one > two) {
-//         return one.from(two);
-//     } else {
-//         return two.from(one);
-//     }
-// }
+const htmx = require("htmx.org");
+globalThis.htmx = htmx; // xd
 
 document.addEventListener("htmx:sendError", e => {
     alert("Failed to connect to server");
@@ -42,11 +26,17 @@ htmx.on("#fileupload", "htmx:xhr:progress", function(e) {
 const sleep = async ms => new Promise(r => setTimeout(r, ms));
 document.addEventListener("DOMContentLoaded", async () => {
     while (true) {
-        console.debug("sub realtime");
-        const res = await fetch("/htmx/status/realtime").then(r => r.text());
-        console.debug("recv realtime", res);
-        document.getElementById("status").outerHTML = res;
-        htmx.process(document.getElementById("status"));
+        console.debug("realtime sub");
+        const res = await fetch("/htmx/status/realtime");
+
+        if (res.ok) {
+            const resHtml = res.then(r => r.text());
+            console.debug("realtime recv", resHTML);
+            document.getElementById("status").outerHTML = resHTML;
+            htmx.process(document.getElementById("status"));
+        } else {
+            console.error("realtime error", res);
+        }
         await sleep(250);
     }
 });

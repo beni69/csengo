@@ -33,14 +33,10 @@ pub struct Player {
     cancel_map: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
 }
 impl Player {
-    pub fn new(
-        controller: Controller,
-        np_rx: Receiver<Option<NowPlaying>>,
-        conn: Connection,
-    ) -> Self {
+    pub fn new(controller: Controller, np_rx: Receiver<Option<NowPlaying>>, conn: db::Db) -> Self {
         Player {
             controller,
-            conn: Arc::new(Mutex::new(conn)),
+            conn,
             np_rx,
             cancel_map: Arc::new(Mutex::new(HashMap::new())),
         }
