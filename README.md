@@ -38,6 +38,31 @@ kelleni:
 -   nodejs, pnpm
 -   linuxon alsa header fileok (`libasound2-dev`)
 
+## setup
+
+Telepítési instrukciók Debian Linux alapú rendszerekre user service-ként
+
+*(elméletileg bármilyen distro-n működik amíg systemd-t használ)*
+
+```sh
+# a source kód letöltése, a programot nem most build-eljük,
+# az már megvan (elvileg), de a config fájlok és scriptek kellenek
+cd ~
+git clone https://github.com/beni69/csengo
+
+cd csengo
+chmod +x misc/update.sh
+./misc/update.sh # letölti a legújabb verziót
+
+# systemd service beállítása és elindítása
+cd misc
+mkdir -vp ~/.config/systemd/user/
+ln -sv $PWD/csengo.service ~/.config/systemd/user/
+systemctl daemon-reload
+systemctl --user enable --now csengo.service
+systemctl --user status csengo.service
+```
+
 ## todo
 
 - [ ] task import
