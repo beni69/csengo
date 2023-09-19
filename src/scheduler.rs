@@ -67,14 +67,12 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             for time in times {
                 let (diff, tmrw): (Duration, bool) = match (time - Local::now().time()).to_std() {
                     Ok(d) => (d, false),
-                    Err(_) => (
-                        ((Local::now() + chrono::Duration::days(1))
+                    Err(_) => {
+                        let when = (Local::now() + chrono::Duration::days(1))
                             .date_naive()
-                            .and_time(time)
-                            - Local::now().naive_utc())
-                        .to_std()?,
-                        true,
-                    ),
+                            .and_time(time);
+                        ((when - Local::now().naive_local()).to_std()?, true)
+                    }
                 };
                 debug!(
                     "{name} (recurring): {} {}",
