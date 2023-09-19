@@ -6,7 +6,7 @@
       buildInputs = [
         pkg-config
         alsa-lib
-        sqlite
+        sqlite-interactive
       ];
     };
   });
