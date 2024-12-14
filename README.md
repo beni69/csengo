@@ -65,5 +65,7 @@ systemctl --user status csengo.service
 
 ## todo
 
+- [ ] file upload status/success toast
 - [ ] task import
+- [ ] daylight savings switch detection
 - [ ] use [systemd credentials](https://www.freedesktop.org/software/systemd/man/systemd.exec.html#Credentials) instead of an env file

@@ -8,8 +8,10 @@ pub type Db = Arc<Mutex<Connection>>;
 
 const DB_FILE: &str = "./csengo.db";
 
+/// to be incremented on schema changes
 const DB_VERSION: u32 = 1;
 
+/// this initializes the db to the latest schema version
 const CREATE_TABLES: &str = "
 CREATE TABLE tasks (
     type      TEXT NOT NULL,
