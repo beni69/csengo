@@ -2,7 +2,7 @@
 require("@picocss/pico");
 require("./style.css");
 
-const htmx = require("htmx.org");
+const htmx = require("htmx.org").default;
 globalThis.htmx = htmx; // xd
 
 document.addEventListener("htmx:sendError", e => {
@@ -30,7 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const res = await fetch("/htmx/status/realtime");
 
         if (res.ok) {
-            const resHtml = res.then(r => r.text());
+            const resHTML = await res.text();
             console.debug("realtime recv", resHTML);
             document.getElementById("status").outerHTML = resHTML;
             htmx.process(document.getElementById("status"));

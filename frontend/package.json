@@ -6,7 +6,7 @@
   },
   "dependencies": {
     "@picocss/pico": "^1.5.10",
-    "htmx.org": "^1.9.4"
+    "htmx.org": "^2.0.4"
   },
   "devDependencies": {
     "esbuild": "^0.19.2"
