@@ -1,10 +1,38 @@
 use crate::{db, mail, player::Player, templates::dur_human, Task};
-use chrono::Local;
-use futures_util::{stream::FuturesUnordered, StreamExt};
-use tokio::{
-    select,
-    time::{interval_at, Duration, Instant, MissedTickBehavior},
-};
+use chrono::{Local, NaiveTime, TimeZone};
+use tokio::{select, time::Duration};
+
+/// Calculate the duration until the next occurrence of any of the given target times.
+/// Uses wall-clock time via chrono, so DST transitions are handled correctly.
+/// If a target time falls into a DST gap (doesn't exist), it's skipped for that day.
+fn duration_until_next(times: &[NaiveTime]) -> (NaiveTime, chrono::Duration) {
+    let now = Local::now();
+
+    times
+        .iter()
+        .filter_map(|&target| {
+            let today = now.date_naive().and_time(target);
+
+            // Try today first
+            if let Some(dt) = Local.from_local_datetime(&today).single() {
+                if dt > now {
+                    return Some((target, dt - now));
+                }
+            }
+
+            // Fall back to tomorrow
+            let tomorrow = (now + chrono::Duration::days(1))
+                .date_naive()
+                .and_time(target);
+
+            Local
+                .from_local_datetime(&tomorrow)
+                .single()
+                .map(|dt| (target, dt - now))
+        })
+        .min_by_key(|(_, duration)| *duration)
+        .expect("at least one valid time should exist")
+}
 
 pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
     match task {
@@ -63,41 +91,28 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             file_name,
             time: times,
         } => {
-            let mut intervals = Vec::with_capacity(times.len());
-            for time in times {
-                let (diff, tmrw): (Duration, bool) = match (time - Local::now().time()).to_std() {
-                    Ok(d) => (d, false),
-                    Err(_) => {
-                        let when = (Local::now() + chrono::Duration::days(1))
-                            .date_naive()
-                            .and_time(time);
-                        ((when - Local::now().naive_local()).to_std()?, true)
-                    }
-                };
-                debug!(
-                    "{name} (recurring): {} {}",
-                    dur_human(&chrono::Duration::from_std(diff).unwrap()).0,
-                    if tmrw { "+" } else { "" }
-                );
-                let start: Instant = Instant::now() + diff;
-                let mut interval = interval_at(start, Duration::from_secs(24 * 60 * 60));
-                interval.set_missed_tick_behavior(MissedTickBehavior::Burst);
-                intervals.push(interval);
-            }
-
             tokio::task::spawn(async move {
                 let mut rx = player.create_cancel(name.to_owned()).await;
 
                 loop {
-                    let mut futures = FuturesUnordered::new();
-                    for f in intervals.iter_mut() {
-                        futures.push(f.tick());
-                    }
+                    let (next_time, diff) = duration_until_next(&times);
+                    debug!(
+                        "{name} (recurring): {} until {next_time}",
+                        dur_human(&diff).0
+                    );
+
+                    let sleep_duration = match diff.to_std() {
+                        Ok(d) => d,
+                        Err(_) => {
+                            warn!("{name}: unexpected negative duration, executing immediately");
+                            Duration::ZERO
+                        }
+                    };
 
                     if select! {
                         biased;
                         _ = &mut rx => true,
-                        _ = futures.next() => false,
+                        _ = tokio::time::sleep(sleep_duration) => false,
                     } {
                         info!("{name}: cancelled");
                         return;
