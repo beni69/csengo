@@ -2,8 +2,10 @@ use chrono::{DateTime, Local};
 use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use std::env::var;
 
+const DEFAULT_SIGNATURE: &str = "Stúdiósok";
+
 pub async fn task_done(file_name: &str, time: &DateTime<Local>) {
-    let (addr, pass) = match get_vars() {
+    let (addr, pass, signature) = match get_vars() {
         Some(x) => x,
         None => return,
     };
@@ -19,7 +21,7 @@ Név: <b>{}</b> <br/>
 Időpont: <b>{}</b>
 </p>
 
-<p>Varga Benedek</p>"#,
+ <p>Üdvözlettel,<br/>{signature}</p>"#,
         file_name,
         time.naive_local()
     );
@@ -32,7 +34,8 @@ Sikeresen lement a következő adás:
 Név: {}
 Időpont: {}
 
-Varga Benedek"#,
+Üdvözlettel,
+{signature}"#,
         file_name,
         time.naive_local()
     );
@@ -67,12 +70,16 @@ Varga Benedek"#,
     }
 }
 
-pub fn get_vars() -> Option<(String, String)> {
-    let addr = var("MAIL_ADDR");
-    let pass = var("MAIL_PASS");
-    if addr.is_err() || pass.is_err() {
-        warn!("MAIL_ADDR or MAIL_PASS not set, no mail will be sent");
-        return None;
+pub fn get_vars() -> Option<(String, String, String)> {
+    match (var("MAIL_ADDR"), var("MAIL_PASS"), var("MAIL_SIGNATURE")) {
+        (Ok(addr), Ok(pass), Ok(signature)) => Some((addr, pass, signature)),
+        (Ok(addr), Ok(pass), Err(_)) => {
+            warn!("MAIL_SIGNATURE not set, using default");
+            Some((addr, pass, DEFAULT_SIGNATURE.to_string()))
+        }
+        _ => {
+            warn!("MAIL_ADDR or MAIL_PASS not set, no mail will be sent");
+            None
+        }
     }
-    Some((addr.unwrap(), pass.unwrap()))
 }
