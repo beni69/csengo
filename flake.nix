@@ -8,6 +8,10 @@
         alsa-lib
         sqlite-interactive
       ];
+
+      shellHook = ''
+        export LD_LIBRARY_PATH="${alsa-lib}/lib:$LD_LIBRARY_PATH"
+      '';
     };
   });
 }
