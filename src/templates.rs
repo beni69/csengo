@@ -15,12 +15,18 @@ use axum::{
     },
     Form,
 };
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Local, NaiveDateTime};
 use futures_util::{Stream, StreamExt};
 use std::{collections::HashMap, convert::Infallible};
 
 /// the format for sending dates to the frontend
 pub static DATEFMT: &str = "%Y-%m-%dT%H:%M";
+
+/// Parse a datetime string in DATEFMT format to a local DateTime
+fn parse_local_datetime(s: &str) -> Result<DateTime<Local>, chrono::ParseError> {
+    NaiveDateTime::parse_from_str(s, DATEFMT)
+        .map(|naive| naive.and_local_timezone(Local).unwrap())
+}
 
 #[derive(Template)]
 #[template(path = "index.html")]
@@ -124,8 +130,7 @@ impl DatePicker {
             "scheduled" => {
                 // carry over first recurring date
                 let t = match q.get("time-0") {
-                    Some(s) => Local
-                        .datetime_from_str(s, DATEFMT)
+                    Some(s) => parse_local_datetime(s)
                         .unwrap_or_else(|_| Local::now()),
                     None => Local::now(),
                 };
@@ -139,7 +144,7 @@ impl DatePicker {
 
                 let mut times: Vec<Option<DateTime<Local>>> = Vec::new();
                 // carry over scheduled date
-                if let Some(Ok(d)) = q.get("time").map(|s| Local.datetime_from_str(s, DATEFMT)) {
+                if let Some(Ok(d)) = q.get("time").map(|s| parse_local_datetime(s)) {
                     times.push(Some(d));
                 }
 
@@ -249,7 +254,7 @@ impl Tasks {
                 };
                 let Some(Ok(time)) = f
                     .remove("time")
-                    .map(|s| Local.datetime_from_str(&s, DATEFMT))
+                    .map(|s| parse_local_datetime(&s))
                 else {
                     anyhow::bail!("Missing or invalid value `time`")
                 };
@@ -439,7 +444,7 @@ fn query_times(q: &HashMap<String, String>, times: &mut Vec<Option<DateTime<Loca
             let Ok(i): Result<usize, _> = k.replace("time-", "").parse() else {
                 continue;
             };
-            let Ok(t) = Local.datetime_from_str(v, DATEFMT) else {
+            let Ok(t) = parse_local_datetime(v) else {
                 continue;
             };
             if times.len() <= i {
