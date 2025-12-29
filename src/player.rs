@@ -64,7 +64,7 @@ impl Player {
         Ok(())
     }
 
-    pub fn now_playing(&self) -> Ref<Option<NowPlaying>> {
+    pub fn now_playing(&self) -> Ref<'_, Option<NowPlaying>> {
         self.np_rx.borrow()
     }
     pub fn np_realtime(&self) -> Receiver<Option<NowPlaying>> {
@@ -120,7 +120,7 @@ impl Player {
         }
     }
 
-    pub async fn lock(&self) -> PlayerLock {
+    pub async fn lock(&self) -> PlayerLock<'_> {
         let lock = self.conn.lock().await;
         PlayerLock { lock }
     }

@@ -221,9 +221,21 @@ impl Tasks {
         Tasks::get(State(p)).await
     }
     async fn post_inner(p: Player, mut f: HashMap<String, String>) -> anyhow::Result<()> {
-        let Some(name) = f.remove("name") else {anyhow::bail!("Missing value `name`")};
-        let Some(Some(priority)) = f.remove("priority").map(|s|Some(match s.as_str(){"false"|"0"|"off"=>false,"true"|"1"|"on"=>true,_=>return None})) else {anyhow::bail!("Missing or invalid value `priority`")};
-        let Some(file_name) = f.remove("file_name") else {anyhow::bail!("Missing value `file_name`")};
+        let Some(name) = f.remove("name") else {
+            anyhow::bail!("Missing value `name`")
+        };
+        let Some(Some(priority)) = f.remove("priority").map(|s| {
+            Some(match s.as_str() {
+                "false" | "0" | "off" => false,
+                "true" | "1" | "on" => true,
+                _ => return None,
+            })
+        }) else {
+            anyhow::bail!("Missing or invalid value `priority`")
+        };
+        let Some(file_name) = f.remove("file_name") else {
+            anyhow::bail!("Missing value `file_name`")
+        };
 
         let task: Task = match f.get("type").map(String::as_str).unwrap_or("now") {
             "now" => Task::Now {
@@ -235,7 +247,12 @@ impl Tasks {
                 if name.trim().is_empty() {
                     anyhow::bail!("`name` can't be empty")
                 };
-                let Some(Ok(time)) = f.remove("time").map(|s|Local.datetime_from_str(&s, DATEFMT)) else {anyhow::bail!("Missing or invalid value `time`")};
+                let Some(Ok(time)) = f
+                    .remove("time")
+                    .map(|s| Local.datetime_from_str(&s, DATEFMT))
+                else {
+                    anyhow::bail!("Missing or invalid value `time`")
+                };
 
                 // check if scheduled task is in the future
                 (time - Local::now())
@@ -256,7 +273,9 @@ impl Tasks {
                 if name.trim().is_empty() {
                     anyhow::bail!("`name` can't be empty")
                 };
-                let Some(Ok(n)) = f.remove("recurring-n").map(|s|s.parse::<usize>()) else {anyhow::bail!("Missing value `recurring-n`")};
+                let Some(Ok(n)) = f.remove("recurring-n").map(|s| s.parse::<usize>()) else {
+                    anyhow::bail!("Missing value `recurring-n`")
+                };
 
                 let mut times = Vec::new();
                 query_times(&f, &mut times);
@@ -417,8 +436,12 @@ async fn updated_files(p: Player) -> Result<impl IntoResponse, Response> {
 fn query_times(q: &HashMap<String, String>, times: &mut Vec<Option<DateTime<Local>>>) {
     for (k, v) in q.iter() {
         if k.starts_with("time-") {
-            let Ok(i): Result<usize, _> = k.replace("time-", "").parse() else {continue};
-            let Ok(t) = Local.datetime_from_str(v, DATEFMT) else {continue};
+            let Ok(i): Result<usize, _> = k.replace("time-", "").parse() else {
+                continue;
+            };
+            let Ok(t) = Local.datetime_from_str(v, DATEFMT) else {
+                continue;
+            };
             if times.len() <= i {
                 times.resize(i + 1, None);
             }
@@ -441,10 +464,10 @@ mod filters {
     }
     pub fn durfmt(d: Duration) -> Result<String> {
         let secs = d.as_secs() as u32;
-        let Some(time) =
-            NaiveTime::from_num_seconds_from_midnight_opt(secs, d.subsec_nanos()) else {
-                return Ok("L".to_string());
-            };
+        let Some(time) = NaiveTime::from_num_seconds_from_midnight_opt(secs, d.subsec_nanos())
+        else {
+            return Ok("L".to_string());
+        };
 
         let fmt = if secs >= 60 * 60 { "%H:%M:%S" } else { "%M:%S" };
         Ok(time.format(fmt).to_string())
@@ -526,6 +549,6 @@ mod filters {
     }
 
     pub fn has_len(np: &Option<NowPlaying>) -> Result<bool> {
-        Ok(np.as_ref().map_or(false, |n| n.len.is_some()))
+        Ok(np.as_ref().is_some_and(|n| n.len.is_some()))
     }
 }

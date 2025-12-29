@@ -111,7 +111,7 @@ async fn api_download(
     State(p): AppState,
     Path(fname): Path<String>,
 ) -> Result<Response, StatusCode> {
-    let file = db::get_file(&p.lock().await.lock, &fname).map_err(|_| (StatusCode::NOT_FOUND))?;
+    let file = db::get_file(&p.lock().await.lock, &fname).map_err(|_| StatusCode::NOT_FOUND )?;
     let mime = mime_guess::from_path(&fname).first_or_octet_stream();
     Ok(([(header::CONTENT_TYPE, mime.as_ref())], file.data).into_response())
 }
