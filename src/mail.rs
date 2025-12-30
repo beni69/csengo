@@ -1,3 +1,4 @@
+use crate::metrics as m;
 use chrono::{DateTime, Local};
 use mail_send::{mail_builder::MessageBuilder, SmtpClientBuilder};
 use std::env::var;
@@ -57,15 +58,18 @@ Időpont: {}
         Ok(t) => t,
         Err(e) => {
             error!("Failed to connect to smtp server\n{:#?}", e);
+            m::record_email(false);
             return;
         }
     };
     match transport.send(message).await {
         Ok(_) => {
             info!("Mail sent");
+            m::record_email(true);
         }
         Err(e) => {
             error!("Failed to send mail\n{:#?}", e);
+            m::record_email(false);
         }
     }
 }

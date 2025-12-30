@@ -1,6 +1,6 @@
 // low-level audio sink implementation
 // for a higher-level interface, see `src/player.rs`
-use crate::player::NowPlaying;
+use crate::{metrics as m, player::NowPlaying};
 use rodio::{
     source::{Empty, Zero},
     OutputStream, Source,
@@ -19,6 +19,7 @@ struct Output {
     controller: Controller,
     track: Track,
     np_tx: Sender<Option<NowPlaying>>,
+    current_track_started: Option<Instant>, // for metrics
 }
 impl Source for Output {
     // should never return `None` or `0`
@@ -64,18 +65,30 @@ impl Iterator for Output {
                 return Some(sample);
             }
 
-            if let Some(name) = &self.track.name {
-                debug!("end of track: {:?}", name);
+            // track ended - record playback duration if it was a named track
+            if let (Some(started), Some(name)) =
+                (self.current_track_started.take(), &self.track.name)
+            {
+                let elapsed = started.elapsed().as_secs_f64();
+                m::record_playback_seconds(name, elapsed);
+                debug!("end of track: {:?} (played {:.2}s)", name, elapsed);
             }
 
             // get next track
             let mut q = self.controller.q.lock().unwrap();
             if let Some(next) = q.pop_front() {
+                // update queue size metric
+                m::set_queue_size(q.len());
+
                 self.track = next;
                 if let Some(name) = &self.track.name {
                     info!("playing: {:?}", name);
+                    self.current_track_started = Some(Instant::now());
                 }
             } else {
+                // queue is empty - update metrics
+                m::set_queue_size(0);
+
                 // play a bit of silence
                 self.track = Track {
                     // this will give every play a worst-case 500ms delay, but in the context of this program and the benefits of lower resource usage, that's acceptable
@@ -84,15 +97,17 @@ impl Iterator for Output {
                 };
             }
 
-            // signal start of track
+            // signal start of track and update playback_active metric
             self.np_tx
                 .send_if_modified(|prev| match (&prev, self.track.name.to_owned()) {
                     (None, None) => false,
                     (Some(_), None) => {
+                        m::set_playback_active(false);
                         *prev = None;
                         true
                     }
                     (_, Some(name)) => {
+                        m::set_playback_active(true);
                         *prev = Some(NowPlaying {
                             name,
                             len: self.track.src.total_duration(),
@@ -112,7 +127,10 @@ pub struct Controller {
 }
 impl Controller {
     pub fn init() -> (Controller, Receiver<Option<NowPlaying>>) {
-        let (_stream, _handle) = OutputStream::try_default().expect("failed to find output device");
+        let (_stream, _handle) = OutputStream::try_default().unwrap_or_else(|e| {
+            m::record_audio_error();
+            panic!("failed to find output device: {e}");
+        });
         let (np_tx, np_rx) = watch::channel(None);
         let controller = Controller {
             q: Arc::new(Mutex::new(VecDeque::new())),
@@ -127,6 +145,7 @@ impl Controller {
                 name: None,
             },
             np_tx,
+            current_track_started: None,
         };
 
         // exit the tokio async thread to be able to use blocking functions
@@ -156,11 +175,13 @@ impl Controller {
 
         let mut q = self.q.lock().unwrap();
         q.push_back(t);
+        m::set_queue_size(q.len());
     }
 
     pub fn stop(&self) {
         self.q.lock().unwrap().clear();
         self.controls.stop.store(true, Ordering::Relaxed);
+        m::set_queue_size(0);
     }
 }
 

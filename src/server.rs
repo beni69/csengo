@@ -1,13 +1,14 @@
-use crate::{db, player::Player, scheduler::schedule, templates, Task};
+use crate::{db, metrics as m, player::Player, scheduler::schedule, templates, Task};
 use axum::{
-    extract::{DefaultBodyLimit, Path, State},
-    http::{header, StatusCode},
+    extract::{DefaultBodyLimit, MatchedPath, Path, State},
+    http::{header, Request, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{any, delete, get, post},
     Json, Router,
 };
 use rust_embed::RustEmbed;
-use std::{env::var, net::IpAddr};
+use std::{env::var, net::IpAddr, time::Instant};
 
 pub type AppState = State<Player>;
 
@@ -19,6 +20,7 @@ pub async fn init(p: Player) -> ! {
     let app = Router::new()
         .route("/", get(templates::Index::get))
         .route("/static/*path", get(static_handler))
+        .route("/metrics", get(metrics_handler))
         .nest(
             "/htmx",
             Router::new()
@@ -47,6 +49,7 @@ pub async fn init(p: Player) -> ! {
                 .route("/import", get(api_import))
                 .route("/file/:fname", get(api_download)),
         )
+        .layer(middleware::from_fn(http_metrics_middleware))
         .with_state(p);
 
     axum::Server::bind(
@@ -111,7 +114,7 @@ async fn api_download(
     State(p): AppState,
     Path(fname): Path<String>,
 ) -> Result<Response, StatusCode> {
-    let file = db::get_file(&p.lock().await.lock, &fname).map_err(|_| StatusCode::NOT_FOUND )?;
+    let file = db::get_file(&p.lock().await.lock, &fname).map_err(|_| StatusCode::NOT_FOUND)?;
     let mime = mime_guess::from_path(&fname).first_or_octet_stream();
     Ok(([(header::CONTENT_TYPE, mime.as_ref())], file.data).into_response())
 }
@@ -135,4 +138,32 @@ pub fn err_to_reply(
 ) -> Response {
     error!("{name}: {msg}\n{e:#?}");
     (status, msg).into_response()
+}
+
+async fn metrics_handler(State(p): AppState) -> String {
+    p.render_metrics()
+}
+
+async fn http_metrics_middleware<B>(
+    matched_path: Option<MatchedPath>,
+    req: Request<B>,
+    next: Next<B>,
+) -> Response {
+    let start = Instant::now();
+    let method = req.method().to_string();
+    let path = matched_path
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| req.uri().path().to_string());
+
+    let response = next.run(req).await;
+
+    let status = response.status().as_u16();
+    let duration = start.elapsed().as_secs_f64();
+
+    // skip recording /metrics endpoint
+    if path != "/metrics" {
+        m::record_http_request(&method, &path, status, duration);
+    }
+
+    response
 }

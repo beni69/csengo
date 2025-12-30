@@ -7,6 +7,7 @@ use crate::{
 use anyhow::Result;
 use axum::{http::StatusCode, response::Response};
 use bytes::Bytes;
+use metrics_exporter_prometheus::PrometheusHandle;
 use rodio::{
     source::{ChannelVolume, SineWave, UniformSourceIterator},
     Decoder, Source,
@@ -31,15 +32,26 @@ pub struct Player {
     pub conn: db::Db,
     np_rx: Receiver<Option<NowPlaying>>,
     cancel_map: Arc<Mutex<HashMap<String, oneshot::Sender<()>>>>,
+    metrics: Arc<PrometheusHandle>,
 }
 impl Player {
-    pub fn new(controller: Controller, np_rx: Receiver<Option<NowPlaying>>, conn: db::Db) -> Self {
+    pub fn new(
+        controller: Controller,
+        np_rx: Receiver<Option<NowPlaying>>,
+        conn: db::Db,
+        metrics: PrometheusHandle,
+    ) -> Self {
         Player {
             controller,
             conn,
             np_rx,
             cancel_map: Arc::new(Mutex::new(HashMap::new())),
+            metrics: Arc::new(metrics),
         }
+    }
+
+    pub fn render_metrics(&self) -> String {
+        self.metrics.render()
     }
 
     pub fn stop(&self) {
@@ -87,7 +99,7 @@ impl Player {
 
     pub fn playtest(&self) {
         // taken from https://docs.rs/rodio
-        // Add a dummy source for the sake of the example.
+        // add a dummy source for the sake of the example.
         let source = SineWave::new(880.0)
             .take_duration(Duration::from_secs_f32(1.0))
             .amplify(0.20);

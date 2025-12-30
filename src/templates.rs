@@ -1,5 +1,5 @@
 use crate::{
-    db,
+    db, metrics as m,
     player::{NowPlaying, Player},
     scheduler::schedule,
     server::{err_to_reply, AppState},
@@ -22,10 +22,9 @@ use std::{collections::HashMap, convert::Infallible};
 /// the format for sending dates to the frontend
 pub static DATEFMT: &str = "%Y-%m-%dT%H:%M";
 
-/// Parse a datetime string in DATEFMT format to a local DateTime
+/// parse a datetime string in DATEFMT format to a local DateTime
 fn parse_local_datetime(s: &str) -> Result<DateTime<Local>, chrono::ParseError> {
-    NaiveDateTime::parse_from_str(s, DATEFMT)
-        .map(|naive| naive.and_local_timezone(Local).unwrap())
+    NaiveDateTime::parse_from_str(s, DATEFMT).map(|naive| naive.and_local_timezone(Local).unwrap())
 }
 
 #[derive(Template)]
@@ -130,8 +129,7 @@ impl DatePicker {
             "scheduled" => {
                 // carry over first recurring date
                 let t = match q.get("time-0") {
-                    Some(s) => parse_local_datetime(s)
-                        .unwrap_or_else(|_| Local::now()),
+                    Some(s) => parse_local_datetime(s).unwrap_or_else(|_| Local::now()),
                     None => Local::now(),
                 };
                 Time::Scheduled(t)
@@ -252,10 +250,7 @@ impl Tasks {
                 if name.trim().is_empty() {
                     anyhow::bail!("`name` can't be empty")
                 };
-                let Some(Ok(time)) = f
-                    .remove("time")
-                    .map(|s| parse_local_datetime(&s))
-                else {
+                let Some(Ok(time)) = f.remove("time").map(|s| parse_local_datetime(&s)) else {
                     anyhow::bail!("Missing or invalid value `time`")
                 };
 
@@ -311,6 +306,9 @@ impl Tasks {
             }
             _ => anyhow::bail!("Invalid value for `type`"),
         };
+
+        // record task creation metric
+        m::record_task_created(task.get_type());
 
         schedule(task, p).await?;
         Ok(())
@@ -387,6 +385,12 @@ impl Files {
                 ));
             }
 
+            // update file stats
+            let conn = p.conn.clone();
+            tokio::spawn(async move {
+                db::update_file_stats(&*conn.lock().await);
+            });
+
             return updated_files(p).await;
         }
         Err((StatusCode::BAD_REQUEST, "error").into_response())
@@ -404,6 +408,13 @@ impl Files {
                 StatusCode::NOT_FOUND,
             ));
         }
+
+        // update file stats
+        let conn = p.conn.clone();
+        tokio::spawn(async move {
+            db::update_file_stats(&*conn.lock().await);
+        });
+
         updated_files(p).await
     }
 }

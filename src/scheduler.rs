@@ -1,11 +1,10 @@
-use crate::{db, mail, player::Player, templates::dur_human, Task};
-use chrono::{Local, NaiveTime, TimeZone};
+use crate::{db, mail, metrics as m, player::Player, templates::dur_human, Task};
+use chrono::{DateTime, Local, NaiveTime, TimeZone};
 use tokio::{select, time::Duration};
 
-/// Calculate the duration until the next occurrence of any of the given target times.
-/// Uses wall-clock time via chrono, so DST transitions are handled correctly.
-/// If a target time falls into a DST gap (doesn't exist), it's skipped for that day.
-fn duration_until_next(times: &[NaiveTime]) -> (NaiveTime, chrono::Duration) {
+// get next time to play for recurring tasks
+// handles daylight savings time by subtracting timezone-aware chrono DateTimes
+fn duration_until_next(times: &[NaiveTime]) -> (chrono::Duration, DateTime<Local>) {
     let now = Local::now();
 
     times
@@ -13,14 +12,13 @@ fn duration_until_next(times: &[NaiveTime]) -> (NaiveTime, chrono::Duration) {
         .filter_map(|&target| {
             let today = now.date_naive().and_time(target);
 
-            // Try today first
             if let Some(dt) = Local.from_local_datetime(&today).single() {
                 if dt > now {
-                    return Some((target, dt - now));
+                    return Some((dt - now, dt));
                 }
             }
 
-            // Fall back to tomorrow
+            // fall back to tomorrow
             let tomorrow = (now + chrono::Duration::days(1))
                 .date_naive()
                 .and_time(target);
@@ -28,20 +26,24 @@ fn duration_until_next(times: &[NaiveTime]) -> (NaiveTime, chrono::Duration) {
             Local
                 .from_local_datetime(&tomorrow)
                 .single()
-                .map(|dt| (target, dt - now))
+                .map(|dt| (dt - now, dt))
         })
-        .min_by_key(|(_, duration)| *duration)
+        .min_by_key(|(duration, _)| *duration)
         .expect("at least one valid time should exist")
 }
 
 pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
     match task {
         Task::Now {
+            name,
             file_name,
             priority,
-            ..
         } => {
-            player.play_file(&file_name, priority).await?;
+            if let Err(e) = player.play_file(&file_name, priority).await {
+                m::record_playback_failure("now", &name);
+                return Err(e);
+            }
+            m::record_playback_success("now", &name);
         }
 
         Task::Scheduled {
@@ -53,6 +55,8 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             // return if the date was in the past
             // there has to be a better way to do this
             (time - Local::now()).to_std()?;
+
+            m::inc_active_tasks("scheduled");
 
             tokio::task::spawn(async move {
                 let diff = time - Local::now();
@@ -66,15 +70,25 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                     _ = tokio::time::sleep(diff) => false,
                 } {
                     info!("{name}: cancelled");
+                    m::dec_active_tasks("scheduled");
                     return;
                 }
 
+                // record drift
+                let now = Local::now();
+                let drift = (now - time).num_milliseconds().abs() as f64 / 1000.0;
+                m::record_drift("scheduled", &name, drift);
+
                 if let Err(e) = player.play_file(&file_name, priority).await {
                     error!("error while playing {}:\n{e:#?}", file_name);
+                    m::record_playback_failure("scheduled", &name);
                 } else {
                     // successful play
+                    m::record_playback_success("scheduled", &name);
                     mail::task_done(&file_name, &time).await;
                 }
+
+                m::dec_active_tasks("scheduled");
 
                 if let Err(e) = player.db_name(db::delete_task, &name).await {
                     error!("{name}: failed to delete task after scheduled play\n{e:#?}");
@@ -91,14 +105,19 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             file_name,
             time: times,
         } => {
+            m::inc_active_tasks("recurring");
+
             tokio::task::spawn(async move {
                 let mut rx = player.create_cancel(name.to_owned()).await;
 
                 loop {
-                    let (next_time, diff) = duration_until_next(&times);
+                    let (diff, expected_time) = duration_until_next(&times);
+                    let is_tomorrow = expected_time.date_naive() != Local::now().date_naive();
                     debug!(
-                        "{name} (recurring): {} until {next_time}",
-                        dur_human(&diff).0
+                        "{name} (recurring): {} ({}{})",
+                        dur_human(&diff).0,
+                        expected_time.time().format("%H:%M"),
+                        if is_tomorrow { "+" } else { "" }
                     );
 
                     let sleep_duration = match diff.to_std() {
@@ -115,13 +134,21 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
                         _ = tokio::time::sleep(sleep_duration) => false,
                     } {
                         info!("{name}: cancelled");
+                        m::dec_active_tasks("recurring");
                         return;
                     }
 
+                    // record drift
+                    let now = Local::now();
+                    let drift = (now - expected_time).num_milliseconds().abs() as f64 / 1000.0;
+                    m::record_drift("recurring", &name, drift);
+
                     if let Err(e) = player.play_file(&file_name, priority).await {
                         error!("{name}: recurring play failed\n{e:#?}");
+                        m::record_playback_failure("recurring", &name);
                     } else {
                         debug!("{name}: added to queue, going back to sleep");
+                        m::record_playback_success("recurring", &name);
                     }
                 }
             });

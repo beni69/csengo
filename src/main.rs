@@ -1,5 +1,6 @@
 mod db;
 mod mail;
+mod metrics;
 mod player;
 mod scheduler;
 mod server;
@@ -25,12 +26,19 @@ async fn main() -> anyhow::Result<()> {
     info!("csengo starting...");
     info!("version {}", GIT_REF);
 
+    // metrics setup
+    let metrics_handle = metrics::init();
+    info!("metrics initialized");
+
     // db setup
     let (conn, db_new) = db::init()?;
 
+    // Initialize file stats from existing database
+    db::update_file_stats(&*conn.lock().await);
+
     // audio setup
     let (controller, np_rx) = sink::Controller::init();
-    let player = player::Player::new(controller, np_rx, conn);
+    let player = player::Player::new(controller, np_rx, conn, metrics_handle);
 
     if !db_new {
         let l = db::load(player.clone()).await?;

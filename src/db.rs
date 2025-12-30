@@ -1,7 +1,7 @@
-use crate::{player::Player, scheduler::schedule, File, Task};
+use crate::{metrics as m, player::Player, scheduler::schedule, File, Task};
 use chrono::{Local, NaiveTime};
 use rusqlite::{params, Connection, Error, Result, Row};
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Instant};
 use tokio::sync::Mutex;
 
 pub type Db = Arc<Mutex<Connection>>;
@@ -9,7 +9,7 @@ pub type Db = Arc<Mutex<Connection>>;
 const DB_FILE: &str = "./csengo.db";
 
 /// to be incremented on schema changes
-const DB_VERSION: u32 = 1;
+pub const DB_VERSION: u32 = 1;
 
 /// this initializes the db to the latest schema version
 const CREATE_TABLES: &str = "
@@ -196,5 +196,21 @@ pub fn db_err(e: rusqlite::Error) -> anyhow::Error {
             _,
         ) => anyhow::anyhow!("Name already in use"),
         _ => anyhow::anyhow!("Unknown database error: e"),
+    }
+}
+
+/// query file statistics (count and total size) and update metrics
+pub fn update_file_stats(conn: &Connection) {
+    let start = Instant::now();
+    let result: Result<(i64, i64)> = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(LENGTH(data)), 0) FROM files",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    );
+    m::record_db_operation("stats", "files", start.elapsed().as_secs_f64());
+
+    match result {
+        Ok((count, bytes)) => m::set_file_stats(count, bytes),
+        Err(e) => warn!("Failed to query file stats: {e}"),
     }
 }
