@@ -129,3 +129,57 @@ form#task {
         background-position: right;
     }
 }
+
+/* Toast notifications */
+#toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    pointer-events: none;
+}
+
+.toast {
+    padding: 0.75rem 1rem;
+    border-radius: var(--border-radius);
+    background: var(--card-background-color);
+    border: var(--border-width) solid var(--form-element-border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-width: 20rem;
+    pointer-events: auto;
+    cursor: pointer;
+    animation: toast-in 0.3s ease-out;
+}
+.toast.success {
+    border-color: var(--ins-color);
+}
+.toast.error {
+    border-color: var(--del-color);
+}
+.toast.fade-out {
+    animation: toast-out 0.3s ease-in forwards;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+@keyframes toast-out {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
