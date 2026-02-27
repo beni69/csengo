@@ -19,7 +19,9 @@ include!(concat!(env!("OUT_DIR"), "/const_gen.rs"));
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "warp=info,csengo=debug");
+        unsafe {
+            env::set_var("RUST_LOG", "warp=info,csengo=debug");
+        }
     }
     pretty_env_logger::init();
 

@@ -15,11 +15,7 @@ fn main() {
         git_ref += "*";
     }
 
-    let code = [
-        "#[allow(clippy::redundant_static_lifetimes)]",
-        &const_declaration!(GIT_REF = git_ref),
-    ]
-    .join("\n");
+    let code = &const_declaration!(GIT_REF = git_ref);
 
     let out_dir = env::var_os("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("const_gen.rs");
