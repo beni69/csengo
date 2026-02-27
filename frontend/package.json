@@ -5,10 +5,10 @@
     "watch": "watchexec 'pnpm build'"
   },
   "dependencies": {
-    "@picocss/pico": "^1.5.10",
-    "htmx.org": "^2.0.4"
+    "@picocss/pico": "^1.5.13",
+    "htmx.org": "^2.0.8"
   },
   "devDependencies": {
-    "esbuild": "^0.19.2"
+    "esbuild": "^0.27.3"
   }
 }
