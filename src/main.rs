@@ -75,6 +75,7 @@ pub enum Task {
         file_name: String,
         priority: bool,
         time: Vec<NaiveTime>,
+        weekday_filter: Option<u8>,
     },
 }
 impl Task {

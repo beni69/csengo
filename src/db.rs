@@ -9,7 +9,7 @@ pub type Db = Arc<Mutex<Connection>>;
 const DB_FILE: &str = "./csengo.db";
 
 /// to be incremented on schema changes
-pub const DB_VERSION: u32 = 1;
+pub const DB_VERSION: u32 = 2;
 
 /// this initializes the db to the latest schema version
 const CREATE_TABLES: &str = "
@@ -65,6 +65,9 @@ fn migrate(conn: &Connection, version: u32) -> Result<()> {
                      INSERT INTO files SELECT * FROM old_files;
                      COMMIT;"
                 ))?;
+            }
+            1 => {
+                // TODO: db migration
             }
             DB_VERSION.. => (),
         }
@@ -170,6 +173,9 @@ fn parse_task(r: &Row) -> Result<Task, Error> {
             file_name: r.get(3)?,
             time: r
                 .get::<_, String>(4)?
+                .split_once('|')
+                .unwrap()
+                .0
                 .split(';')
                 .map(|s| {
                     NaiveTime::parse_from_str(s, TIMEFMT).map_err(|e| {
@@ -181,6 +187,20 @@ fn parse_task(r: &Row) -> Result<Task, Error> {
                     })
                 })
                 .collect::<Result<Vec<NaiveTime>>>()?,
+            weekday_filter: r
+                .get::<_, String>(4)?
+                .split_once('|')
+                .unwrap()
+                .1
+                .parse()
+                .map(Some)
+                .map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        3,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?,
         },
         _ => unreachable!(),
     })

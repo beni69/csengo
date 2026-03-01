@@ -104,6 +104,7 @@ pub async fn schedule(task: Task, player: Player) -> anyhow::Result<()> {
             priority,
             file_name,
             time: times,
+            weekday_filter,
         } => {
             m::inc_active_tasks("recurring");
 
